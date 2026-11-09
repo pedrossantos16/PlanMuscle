@@ -8,8 +8,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
+import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.lifecycle.ViewModel
@@ -29,6 +28,9 @@ import com.pedro.planmuscle.ui.history.HistoryScreen
 import com.pedro.planmuscle.ui.history.HistoryViewModel
 import com.pedro.planmuscle.ui.nutrition.NutritionPlanScreen
 import com.pedro.planmuscle.ui.nutrition.NutritionViewModel
+import com.pedro.planmuscle.ui.settings.SettingsScreen
+import com.pedro.planmuscle.ui.settings.SettingsViewModel
+import com.pedro.planmuscle.ui.theme.AppThemeOption
 import com.pedro.planmuscle.ui.theme.PlanMuscleTheme
 import com.pedro.planmuscle.ui.workout.WorkoutSessionScreen
 import com.pedro.planmuscle.ui.workout.WorkoutViewModel
@@ -36,8 +38,9 @@ import com.pedro.planmuscle.ui.workout.WorkoutViewModel
 sealed class BottomNavItem(val route: String, val title: String, val icon: ImageVector) {
     object Dashboard : BottomNavItem("dashboard", "Início", Icons.Default.Home)
     object CheckIn : BottomNavItem("checkin", "Diário", Icons.Default.EditNote)
-    object Nutrition : BottomNavItem("nutrition", "Plano", Icons.Default.Restaurant)
+    object Nutrition : BottomNavItem("nutrition", "Plano", Icons.Default.RestaurantMenu)
     object History : BottomNavItem("history", "Evolução", Icons.Default.Analytics)
+    object Settings : BottomNavItem("settings", "Ajustes", Icons.Default.Settings)
 }
 
 class MainActivity : ComponentActivity() {
@@ -52,15 +55,25 @@ class MainActivity : ComponentActivity() {
         repository = PlanMuscleRepository(database)
 
         setContent {
-            PlanMuscleTheme {
-                MainAppScreen(repository = repository)
+            var selectedTheme by remember { mutableStateOf(AppThemeOption.NEON_FITNESS) }
+
+            PlanMuscleTheme(themeOption = selectedTheme) {
+                MainAppScreen(
+                    repository = repository,
+                    currentTheme = selectedTheme,
+                    onThemeChanged = { newTheme -> selectedTheme = newTheme }
+                )
             }
         }
     }
 }
 
 @Composable
-fun MainAppScreen(repository: PlanMuscleRepository) {
+fun MainAppScreen(
+    repository: PlanMuscleRepository,
+    currentTheme: AppThemeOption,
+    onThemeChanged: (AppThemeOption) -> Unit
+) {
     val navController = rememberNavController()
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
@@ -69,7 +82,8 @@ fun MainAppScreen(repository: PlanMuscleRepository) {
         BottomNavItem.Dashboard,
         BottomNavItem.CheckIn,
         BottomNavItem.Nutrition,
-        BottomNavItem.History
+        BottomNavItem.History,
+        BottomNavItem.Settings
     )
 
     val showBottomBar = currentRoute in bottomNavItems.map { it.route }
@@ -118,7 +132,6 @@ fun MainAppScreen(repository: PlanMuscleRepository) {
                         if (existingSessionId != null && existingSessionId > 0) {
                             navController.navigate("workout_session/$existingSessionId")
                         } else {
-                            // Navigate to active workout
                             navController.navigate("workout_session/1")
                         }
                     }
@@ -178,6 +191,22 @@ fun MainAppScreen(repository: PlanMuscleRepository) {
                     }
                 )
                 HistoryScreen(viewModel = historyViewModel)
+            }
+
+            composable(BottomNavItem.Settings.route) {
+                val context = androidx.compose.ui.platform.LocalContext.current
+                val settingsViewModel: SettingsViewModel = viewModel(
+                    factory = object : ViewModelProvider.Factory {
+                        @Suppress("UNCHECKED_CAST")
+                        override fun <T : ViewModel> create(modelClass: Class<T>): T {
+                            return SettingsViewModel(repository, context) as T
+                        }
+                    }
+                )
+                SettingsScreen(
+                    viewModel = settingsViewModel,
+                    onThemeChanged = onThemeChanged
+                )
             }
         }
     }
