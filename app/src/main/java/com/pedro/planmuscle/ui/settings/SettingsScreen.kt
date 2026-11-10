@@ -20,7 +20,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import com.pedro.planmuscle.domain.ExerciseDefinition
+import com.pedro.planmuscle.domain.engine.ExerciseDefinition
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

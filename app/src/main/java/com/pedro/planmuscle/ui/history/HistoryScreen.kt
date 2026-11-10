@@ -14,6 +14,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.pedro.planmuscle.data.local.converter.DateUtils
+import com.pedro.planmuscle.data.local.entity.BiweeklyReviewEntity
+import com.pedro.planmuscle.data.local.entity.BodyMeasurementEntity
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -43,11 +46,12 @@ fun HistoryScreen(viewModel: HistoryViewModel) {
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             // Card de Revisão Quinzenal
-            state.reviewCard?.let { review ->
+            state.pendingReview?.let { review ->
                 item {
                     BiWeeklyReviewCardSection(
                         review = review,
-                        onApplyAdjustment = { calories -> viewModel.applyCalorieAdjustment(calories) }
+                        onAccept = { viewModel.acceptReview(review) },
+                        onReject = { viewModel.rejectReview(review.id) }
                     )
                 }
             }
@@ -62,7 +66,7 @@ fun HistoryScreen(viewModel: HistoryViewModel) {
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            text = "Valores em cinza são o peso diário. O valor em destaque é a média móvel de 7 dias.",
+                            text = "Valores em cinza são o peso diário. O valor em destaque é a média móvel de 7 dias de calendário.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -93,8 +97,9 @@ fun HistoryScreen(viewModel: HistoryViewModel) {
 
 @Composable
 fun BiWeeklyReviewCardSection(
-    review: BiWeeklyReviewCard,
-    onApplyAdjustment: (Int) -> Unit
+    review: BiweeklyReviewEntity,
+    onAccept: () -> Unit,
+    onReject: () -> Unit
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -109,32 +114,40 @@ fun BiWeeklyReviewCardSection(
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = "Revisão Automatizada — Semana ${review.reviewWeekNumber}",
+                    text = "Revisão Quinzenal de 14 Dias",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold
                 )
             }
 
             Spacer(modifier = Modifier.height(8.dp))
-            val formattedRate = String.format(java.util.Locale.US, "%.2f", review.avgWeightGainPerWeekKg)
-            Text(text = "• Ganho médio de peso: ${formattedRate} kg/semana (${review.weightGainStatus})")
-            Text(text = "• Variação de cintura: ${review.waistChangeCm} cm")
-            Text(text = "• Disposição média: ${review.avgReadinessScore} / 5.0")
+            val formattedRate = String.format(java.util.Locale.US, "%.2f", review.weeklyWeightChangeKg ?: 0f)
+            Text(text = "• Ganho médio de peso: ${formattedRate} kg/semana")
+            Text(text = "• Treinos concluídos: ${review.completedWorkouts} / ${review.scheduledWorkouts}")
+            Text(text = "• Disposição média: ${review.averageReadiness ?: "-"} / 5.0")
 
             Spacer(modifier = Modifier.height(8.dp))
             Text(
-                text = review.recommendationMessage,
+                text = review.rationale,
                 style = MaterialTheme.typography.bodySmall,
                 fontWeight = FontWeight.Medium
             )
 
-            if (review.isAdjustmentRecommended && review.suggestedCalorieChange > 0) {
+            if (review.status == "PENDING" && review.calorieAdjustment != 0) {
                 Spacer(modifier = Modifier.height(12.dp))
-                Button(
-                    onClick = { onApplyAdjustment(2550 + review.suggestedCalorieChange) },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("APLICAR AJUSTE DE +${review.suggestedCalorieChange} KCAL")
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(
+                        onClick = onAccept,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("ACEITAR +${review.calorieAdjustment} KCAL")
+                    }
+                    OutlinedButton(
+                        onClick = onReject,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("RECUSAR")
+                    }
                 }
             }
         }
@@ -142,7 +155,7 @@ fun BiWeeklyReviewCardSection(
 }
 
 @Composable
-fun WeightDataPointRow(point: WeightDataPoint) {
+fun WeightDataPointRow(point: CalendarWeightPoint) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
@@ -154,16 +167,16 @@ fun WeightDataPointRow(point: WeightDataPoint) {
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(text = point.date, style = MaterialTheme.typography.bodyMedium)
+            Text(text = point.dateString, style = MaterialTheme.typography.bodyMedium)
 
             Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 Text(
-                    text = "Diário: ${point.dailyWeight ?: "-"} kg",
+                    text = "Diário: ${point.dailyWeightKg ?: "-"} kg",
                     style = MaterialTheme.typography.bodySmall,
                     color = Color.Gray
                 )
-                val avgFormatted = if (point.movingAverage7Days != null)
-                    String.format(java.util.Locale.US, "%.2f kg", point.movingAverage7Days)
+                val avgFormatted = if (point.movingAverage7DaysKg != null)
+                    String.format(java.util.Locale.US, "%.2f kg", point.movingAverage7DaysKg)
                 else "-"
 
                 Text(
@@ -178,14 +191,14 @@ fun WeightDataPointRow(point: WeightDataPoint) {
 }
 
 @Composable
-fun MeasurementRow(measurement: com.pedro.planmuscle.data.model.BodyMeasurementEntity) {
+fun MeasurementRow(measurement: BodyMeasurementEntity) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
             Text(
-                text = "Data: ${measurement.date}",
+                text = "Data: ${DateUtils.epochDayToDateString(measurement.dateEpochDay)}",
                 style = MaterialTheme.typography.labelMedium,
                 fontWeight = FontWeight.Bold
             )

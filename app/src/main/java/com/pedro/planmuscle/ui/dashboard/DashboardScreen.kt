@@ -1,6 +1,5 @@
 package com.pedro.planmuscle.ui.dashboard
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -10,20 +9,23 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import com.pedro.planmuscle.data.local.entity.NutritionTargetEntity
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DashboardScreen(
     viewModel: DashboardViewModel,
-    onStartWorkout: (workoutType: String, weekNumber: Int, sessionId: Long?) -> Unit
+    onStartWorkout: (sessionId: Long) -> Unit
 ) {
     val state by viewModel.uiState.collectAsState()
+    val scope = rememberCoroutineScope()
 
     Scaffold(
         topBar = {
@@ -36,7 +38,7 @@ fun DashboardScreen(
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            text = "Semana ${state.weekNumber} de 8 • Data: ${state.todayDate}",
+                            text = "Semana ${state.weekNumber} de 8 • Data: ${state.todayDateString}",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -58,17 +60,16 @@ fun DashboardScreen(
             // Card do Próximo Treino
             item {
                 WorkoutCard(
-                    weekNumber = state.weekNumber,
+                    title = state.scheduleTitle,
+                    subtitle = state.scheduleSubtitle,
                     workoutType = state.todayWorkoutType,
-                    existingSessionId = state.workoutSession?.id,
-                    isCompleted = state.workoutSession?.status == "COMPLETED",
+                    isWorkoutDay = state.isWorkoutDay,
                     onStart = {
-                        val session = state.workoutSession
-                        if (session != null) {
-                            onStartWorkout(session.workoutType, session.weekNumber, session.id)
-                        } else {
-                            viewModel.startWorkoutSession(state.todayWorkoutType, state.weekNumber)
-                            onStartWorkout(state.todayWorkoutType, state.weekNumber, null)
+                        scope.launch {
+                            val sessionId = viewModel.startOrResumeWorkoutSession()
+                            if (sessionId > 0) {
+                                onStartWorkout(sessionId)
+                            }
                         }
                     }
                 )
@@ -78,23 +79,24 @@ fun DashboardScreen(
             item {
                 WaterTrackerCard(
                     totalWaterMl = state.totalWaterMl,
-                    targetWaterMl = state.activeProtocol?.waterTargetMl ?: 2600,
+                    targetWaterMl = state.activeNutritionTarget?.waterTargetMl ?: 2600,
                     statusMessage = state.hydrationMessage,
-                    onAddWater = { viewModel.addWater(it) }
+                    onAddWater = { viewModel.addWater(it) },
+                    onUndoWater = { viewModel.deleteLastWaterEntry() }
                 )
             }
 
             // Card de Metas Nutricionais
             item {
                 NutritionSummaryCard(
-                    protocol = state.activeProtocol
+                    target = state.activeNutritionTarget
                 )
             }
 
             // Card de Lembrete de Suplementação
             item {
                 SupplementTrackerCard(
-                    onLogSupplement = { id, amount -> viewModel.logSupplement(id, amount) }
+                    onToggleSupplement = { id, amount -> viewModel.toggleSupplement(id, amount) }
                 )
             }
         }
@@ -103,15 +105,17 @@ fun DashboardScreen(
 
 @Composable
 fun WorkoutCard(
-    weekNumber: Int,
+    title: String,
+    subtitle: String,
     workoutType: String,
-    existingSessionId: Long?,
-    isCompleted: Boolean,
+    isWorkoutDay: Boolean,
     onStart: () -> Unit
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+        colors = CardDefaults.cardColors(
+            containerColor = if (isWorkoutDay) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.secondaryContainer
+        ),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
@@ -122,23 +126,23 @@ fun WorkoutCard(
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(
-                        imageVector = Icons.Default.FitnessCenter,
+                        imageVector = if (isWorkoutDay) Icons.Default.FitnessCenter else Icons.Default.NightsStay,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.primary
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "Treino $workoutType Agendado",
+                        text = title,
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold
                     )
                 }
                 Surface(
                     shape = RoundedCornerShape(12.dp),
-                    color = if (isCompleted) Color(0xFF4CAF50) else MaterialTheme.colorScheme.primary
+                    color = if (isWorkoutDay) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary
                 ) {
                     Text(
-                        text = if (isCompleted) "CONCLUÍDO ✓" else "17:30 – 18:15",
+                        text = if (isWorkoutDay) "17:30 – 18:15" else "DESCANSO",
                         color = Color.White,
                         style = MaterialTheme.typography.labelSmall,
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
@@ -148,30 +152,19 @@ fun WorkoutCard(
 
             Spacer(modifier = Modifier.height(8.dp))
             Text(
-                text = "Local: GrowFit Unidade 2 (Duração: 45 min)",
+                text = subtitle,
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Text(
-                text = if (workoutType == "A")
-                    "Foco: Supino reto, Agachamento, Puxada alta, Mesa flexora, Elevação lateral, Rosca direta"
-                else
-                    "Foco: Leg press, Remada baixa, Supino inclinado, Stiff, Desenvolvimento, Rosca martelo + Tríceps",
-                style = MaterialTheme.typography.bodySmall,
-                modifier = Modifier.padding(top = 4.dp)
             )
 
             Spacer(modifier = Modifier.height(12.dp))
             Button(
                 onClick = onStart,
-                modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = if (isCompleted) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.primary
-                )
+                modifier = Modifier.fillMaxWidth()
             ) {
                 Icon(imageVector = Icons.Default.PlayArrow, contentDescription = null)
                 Spacer(modifier = Modifier.width(8.dp))
-                Text(text = if (isCompleted) "VER SESSÃO GRAVADA" else "INICIAR TREINO $workoutType AGORA")
+                Text(text = if (isWorkoutDay) "INICIAR / RETOMAR TREINO $workoutType" else "VER SESSÃO DE TREINO")
             }
         }
     }
@@ -182,7 +175,8 @@ fun WaterTrackerCard(
     totalWaterMl: Int,
     targetWaterMl: Int,
     statusMessage: String,
-    onAddWater: (Int) -> Unit
+    onAddWater: (Int) -> Unit,
+    onUndoWater: () -> Unit
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -241,13 +235,16 @@ fun WaterTrackerCard(
                     onClick = { onAddWater(250) },
                     modifier = Modifier.weight(1f)
                 ) {
-                    Text("+ 250 ml")
+                    Text("+250 ml")
                 }
                 OutlinedButton(
                     onClick = { onAddWater(500) },
                     modifier = Modifier.weight(1f)
                 ) {
-                    Text("+ 500 ml")
+                    Text("+500 ml")
+                }
+                IconButton(onClick = onUndoWater) {
+                    Icon(imageVector = Icons.Default.Undo, contentDescription = "Desfazer")
                 }
             }
         }
@@ -255,7 +252,7 @@ fun WaterTrackerCard(
 }
 
 @Composable
-fun NutritionSummaryCard(protocol: com.pedro.planmuscle.data.model.ProtocolEntity?) {
+fun NutritionSummaryCard(target: NutritionTargetEntity?) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
@@ -280,10 +277,10 @@ fun NutritionSummaryCard(protocol: com.pedro.planmuscle.data.model.ProtocolEntit
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceAround
             ) {
-                NutrientBox(title = "Calorias", value = "${protocol?.calorieTarget ?: 2550} kcal")
-                NutrientBox(title = "Proteínas", value = "${protocol?.proteinTargetGrams ?: 150}g")
-                NutrientBox(title = "Carbos", value = "${protocol?.carbTargetGrams ?: 330}g")
-                NutrientBox(title = "Gorduras", value = "${protocol?.fatTargetGrams ?: 70}g")
+                NutrientBox(title = "Calorias", value = "${target?.calorieTarget ?: 2550} kcal")
+                NutrientBox(title = "Proteínas", value = "${target?.proteinTargetGrams ?: 150}g")
+                NutrientBox(title = "Carbos", value = "${target?.carbTargetGrams ?: 330}g")
+                NutrientBox(title = "Gorduras", value = "${target?.fatTargetGrams ?: 70}g")
             }
         }
     }
@@ -298,7 +295,7 @@ fun NutrientBox(title: String, value: String) {
 }
 
 @Composable
-fun SupplementTrackerCard(onLogSupplement: (String, String) -> Unit) {
+fun SupplementTrackerCard(onToggleSupplement: (String, String) -> Unit) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
@@ -320,12 +317,12 @@ fun SupplementTrackerCard(onLogSupplement: (String, String) -> Unit) {
                     Text(text = "Creatina (06:45)", fontWeight = FontWeight.SemiBold)
                     Text(text = "3–5g com suco de laranja", style = MaterialTheme.typography.bodySmall)
                 }
-                TextButton(onClick = { onLogSupplement("CREATINE", "5g") }) {
+                TextButton(onClick = { onToggleSupplement("CREATINE", "5g") }) {
                     Text("Tomado ✓")
                 }
             }
 
-            Divider(modifier = Modifier.padding(vertical = 4.dp))
+            HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -336,7 +333,7 @@ fun SupplementTrackerCard(onLogSupplement: (String, String) -> Unit) {
                     Text(text = "Whey Protein (15:30)", fontWeight = FontWeight.SemiBold)
                     Text(text = "1 dose pré-treino no trabalho", style = MaterialTheme.typography.bodySmall)
                 }
-                TextButton(onClick = { onLogSupplement("WHEY", "1 dose") }) {
+                TextButton(onClick = { onToggleSupplement("WHEY", "1 dose") }) {
                     Text("Tomado ✓")
                 }
             }

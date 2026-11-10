@@ -1,12 +1,12 @@
 package com.pedro.planmuscle.ui.workout
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -24,6 +24,7 @@ fun WorkoutSessionScreen(
     onNavigateBack: () -> Unit
 ) {
     val state by viewModel.uiState.collectAsState()
+    var showExitDialog by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -31,19 +32,19 @@ fun WorkoutSessionScreen(
                 title = {
                     Column {
                         Text(
-                            text = state.workoutDefinition.title,
+                            text = "Sessão de Treino ${state.session?.workoutType ?: ""}",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            text = "GrowFit • 45 minutos (17:30 – 18:15)",
+                            text = "GrowFit • Janela 45 min (17:30 – 18:15)",
                             style = MaterialTheme.typography.bodySmall
                         )
                     }
                 },
                 navigationIcon = {
-                    IconButton(onClick = onNavigateBack) {
-                        Icon(imageVector = Icons.Default.ArrowBack, contentDescription = "Voltar")
+                    IconButton(onClick = { showExitDialog = true }) {
+                        Icon(imageVector = Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Voltar")
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -57,7 +58,7 @@ fun WorkoutSessionScreen(
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
-            // Banner do Timer de Descanso
+            // Rest Timer
             RestTimerBanner(
                 secondsRemaining = state.timerSecondsRemaining,
                 isRunning = state.isTimerRunning,
@@ -65,26 +66,24 @@ fun WorkoutSessionScreen(
                 onAdd30s = { viewModel.startRestTimer(state.timerSecondsRemaining + 30) }
             )
 
-            // Banner da Fase Atual
-            PhaseInfoBanner(phaseDescription = state.currentPhase.description)
-
             LazyColumn(
                 modifier = Modifier
                     .weight(1f)
                     .padding(horizontal = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                items(state.exerciseStates) { exerciseState ->
-                    ExerciseCard(
-                        exerciseState = exerciseState,
-                        onSaveSet = { setType, weight, reps, rir ->
+                items(state.exercisePrescriptions) { prescriptionState ->
+                    PrescriptionCard(
+                        prescriptionState = prescriptionState,
+                        onSaveSet = { setType, weight, reps, rir, techniqueOk ->
                             viewModel.saveSetLog(
-                                exerciseId = exerciseState.definition.id,
-                                exerciseName = exerciseState.definition.name,
+                                prescriptionId = prescriptionState.prescription.id,
+                                exerciseId = prescriptionState.prescription.exerciseId,
                                 setType = setType,
                                 weightKg = weight,
                                 reps = reps,
-                                rir = rir
+                                rir = rir,
+                                techniqueOk = techniqueOk
                             )
                         },
                         onDeleteSet = { logId -> viewModel.deleteSetLog(logId) }
@@ -103,11 +102,36 @@ fun WorkoutSessionScreen(
                     ) {
                         Icon(imageVector = Icons.Default.Check, contentDescription = null)
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("FINALIZAR TREINO NA GROWFIT")
+                        Text("FINALIZAR SESSÃO DE TREINO")
                     }
                     Spacer(modifier = Modifier.height(32.dp))
                 }
             }
+        }
+
+        if (showExitDialog) {
+            AlertDialog(
+                onDismissRequest = { showExitDialog = false },
+                title = { Text("Continuar ou Sair?") },
+                text = { Text("Você pode continuar o treino mais tarde ou abandonar a sessão.") },
+                confirmButton = {
+                    TextButton(onClick = {
+                        showExitDialog = false
+                        onNavigateBack()
+                    }) {
+                        Text("CONTINUAR DEPOIS")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = {
+                        showExitDialog = false
+                        viewModel.abandonWorkout()
+                        onNavigateBack()
+                    }) {
+                        Text("ABANDONAR TREINO", color = Color.Red)
+                    }
+                }
+            )
         }
     }
 }
@@ -159,30 +183,17 @@ fun RestTimerBanner(
 }
 
 @Composable
-fun PhaseInfoBanner(phaseDescription: String) {
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        color = MaterialTheme.colorScheme.secondaryContainer
-    ) {
-        Text(
-            text = phaseDescription,
-            style = MaterialTheme.typography.bodySmall,
-            fontWeight = FontWeight.Medium,
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-        )
-    }
-}
-
-@Composable
-fun ExerciseCard(
-    exerciseState: ExerciseState,
-    onSaveSet: (setType: String, weight: Float, reps: Int, rir: Int?) -> Unit,
+fun PrescriptionCard(
+    prescriptionState: ExercisePrescriptionUiState,
+    onSaveSet: (setType: String, weight: Float, reps: Int, rir: Int?, techniqueOk: Boolean) -> Unit,
     onDeleteSet: (Long) -> Unit
 ) {
+    val prescription = prescriptionState.prescription
     var weightInput by remember { mutableStateOf("") }
     var repsInput by remember { mutableStateOf("") }
     var rirInput by remember { mutableStateOf("2") }
     var isWarmupSet by remember { mutableStateOf(false) }
+    var techniqueOk by remember { mutableStateOf(true) }
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -190,33 +201,35 @@ fun ExerciseCard(
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(
-                text = exerciseState.definition.name,
+                text = prescription.exerciseNameSnapshot,
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold
             )
 
             Text(
-                text = "Meta: ${exerciseState.definition.defaultWorkSets} series × ${exerciseState.definition.targetRepsMin}–${exerciseState.definition.targetRepsMax} reps (Descanso: ${exerciseState.definition.restTimeSeconds}s)",
+                text = "Prescrição: ${prescription.prescribedWorkSets} séries × ${prescription.minReps}–${prescription.maxReps} reps (Descanso: ${prescription.restSeconds}s, RIR ${prescription.targetRirMin}–${prescription.targetRirMax})",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
 
-            Spacer(modifier = Modifier.height(4.dp))
-            Surface(
-                shape = RoundedCornerShape(4.dp),
-                color = MaterialTheme.colorScheme.surfaceVariant
-            ) {
-                Text(
-                    text = "Aquecimento: ${exerciseState.definition.warmupGuidance}",
-                    style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                )
+            if (prescription.warmupGuidanceSnapshot.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Surface(
+                    shape = RoundedCornerShape(4.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant
+                ) {
+                    Text(
+                        text = "Aquecimento: ${prescription.warmupGuidanceSnapshot}",
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                    )
+                }
             }
 
-            if (exerciseState.suggestedProgression.isNotEmpty()) {
+            prescriptionState.progressionDecision?.let { decision ->
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = exerciseState.suggestedProgression,
+                    text = "💡 Engine: ${decision.rationale}",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.primary,
                     fontWeight = FontWeight.SemiBold
@@ -226,9 +239,9 @@ fun ExerciseCard(
             Spacer(modifier = Modifier.height(12.dp))
 
             // Registros gravados
-            if (exerciseState.logs.isNotEmpty()) {
+            if (prescriptionState.logs.isNotEmpty()) {
                 Text(text = "Séries Registradas:", style = MaterialTheme.typography.labelMedium)
-                exerciseState.logs.forEach { log ->
+                prescriptionState.logs.forEach { log ->
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -236,9 +249,10 @@ fun ExerciseCard(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        val typeLabel = if (log.setType == "WARMUP") "[AQUECIMENTO]" else "Série ${log.setNumber}"
+                        val typeLabel = if (log.setType == "WARMUP") "[AQUECIMENTO]" else "Série ${log.setIndex}"
+                        val formattedWeight = String.format(java.util.Locale.US, "%.1f", log.weightKg)
                         Text(
-                            text = "$typeLabel: ${log.weightKg} kg × ${log.reps} reps (RIR ${log.rir ?: "-"})",
+                            text = "$typeLabel: ${formattedWeight} kg × ${log.reps} reps (RIR ${log.rir ?: "-"})",
                             style = MaterialTheme.typography.bodySmall,
                             fontWeight = if (log.setType == "WORK") FontWeight.Bold else FontWeight.Normal
                         )
@@ -257,7 +271,7 @@ fun ExerciseCard(
                 Spacer(modifier = Modifier.height(12.dp))
             }
 
-            // Form de adição de série
+            // Input form com suporte a decimais com vírgula ou ponto
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -266,7 +280,7 @@ fun ExerciseCard(
                 OutlinedTextField(
                     value = weightInput,
                     onValueChange = { weightInput = it },
-                    label = { Text("Peso (kg)") },
+                    label = { Text("Carga (kg)") },
                     modifier = Modifier.weight(1f),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
                 )
@@ -299,20 +313,21 @@ fun ExerciseCard(
                         checked = isWarmupSet,
                         onCheckedChange = { isWarmupSet = it }
                     )
-                    Text("Série de Aquecimento", style = MaterialTheme.typography.bodySmall)
+                    Text("Aquecimento", style = MaterialTheme.typography.bodySmall)
                 }
 
                 Button(
                     onClick = {
-                        val w = weightInput.toFloatOrNull() ?: 0f
+                        val sanitizedWeight = weightInput.replace(',', '.').toFloatOrNull() ?: 0f
                         val r = repsInput.toIntOrNull() ?: 0
                         val rir = rirInput.toIntOrNull()
-                        if (w > 0 && r > 0) {
+                        if (sanitizedWeight > 0f && r > 0) {
                             onSaveSet(
                                 if (isWarmupSet) "WARMUP" else "WORK",
-                                w,
+                                sanitizedWeight,
                                 r,
-                                rir
+                                rir,
+                                techniqueOk
                             )
                             repsInput = ""
                         }
