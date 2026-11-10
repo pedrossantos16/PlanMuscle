@@ -5,6 +5,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.pedro.planmuscle.data.model.ProtocolEntity
 import com.pedro.planmuscle.data.repository.PlanMuscleRepository
+import com.pedro.planmuscle.domain.ExerciseDefinition
+import com.pedro.planmuscle.domain.TrainingPhaseEngine
+import com.pedro.planmuscle.domain.WorkoutDefinition
 import com.pedro.planmuscle.ui.theme.AppThemeOption
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -16,12 +19,13 @@ import kotlinx.coroutines.launch
 data class SettingsUiState(
     val activeProtocol: ProtocolEntity? = null,
     val selectedTheme: AppThemeOption = AppThemeOption.NEON_FITNESS,
-    val isSavedSuccess: Boolean = false
+    val workoutA: WorkoutDefinition = TrainingPhaseEngine.getWorkoutDefinition("A"),
+    val workoutB: WorkoutDefinition = TrainingPhaseEngine.getWorkoutDefinition("B")
 )
 
 class SettingsViewModel(
     private val repository: PlanMuscleRepository,
-    private val context: Context
+    context: Context
 ) : ViewModel() {
 
     private val prefs = context.getSharedPreferences("plan_muscle_prefs", Context.MODE_PRIVATE)
@@ -35,13 +39,18 @@ class SettingsViewModel(
         }
     )
 
+    private val _exerciseTrigger = MutableStateFlow(System.currentTimeMillis())
+
     val uiState: StateFlow<SettingsUiState> = combine(
         repository.getActiveProtocol(),
-        _selectedTheme
-    ) { protocol, theme ->
+        _selectedTheme,
+        _exerciseTrigger
+    ) { protocol, theme, _ ->
         SettingsUiState(
             activeProtocol = protocol ?: ProtocolEntity(startDate = repository.getTodayDateString()),
-            selectedTheme = theme
+            selectedTheme = theme,
+            workoutA = TrainingPhaseEngine.getWorkoutDefinition("A"),
+            workoutB = TrainingPhaseEngine.getWorkoutDefinition("B")
         )
     }.stateIn(
         scope = viewModelScope,
@@ -69,5 +78,27 @@ class SettingsViewModel(
                 fatTarget = fats
             )
         }
+    }
+
+    fun saveCustomExercise(
+        exerciseId: String,
+        name: String,
+        workSets: Int,
+        minReps: Int,
+        maxReps: Int,
+        restSeconds: Int,
+        warmupGuidance: String
+    ) {
+        val customEx = ExerciseDefinition(
+            id = exerciseId,
+            name = name,
+            targetRepsMin = minReps,
+            targetRepsMax = maxReps,
+            defaultWorkSets = workSets,
+            restTimeSeconds = restSeconds,
+            warmupGuidance = warmupGuidance
+        )
+        TrainingPhaseEngine.updateExerciseDefinition(customEx)
+        _exerciseTrigger.value = System.currentTimeMillis()
     }
 }

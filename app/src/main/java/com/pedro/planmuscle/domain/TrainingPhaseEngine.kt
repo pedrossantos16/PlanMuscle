@@ -28,6 +28,12 @@ data class TrainingPhase(
 
 object TrainingPhaseEngine {
 
+    private val customOverrides = mutableMapOf<String, ExerciseDefinition>()
+
+    fun updateExerciseDefinition(exercise: ExerciseDefinition) {
+        customOverrides[exercise.id] = exercise
+    }
+
     val WorkoutA = WorkoutDefinition(
         type = "A",
         title = "Treino A — Ênfase Peitoral, Quadríceps e Costas",
@@ -174,7 +180,11 @@ object TrainingPhaseEngine {
     }
 
     fun getWorkoutDefinition(type: String): WorkoutDefinition {
-        return if (type.uppercase() == "B") WorkoutB else WorkoutA
+        val baseDef = if (type.uppercase() == "B") WorkoutB else WorkoutA
+        val updatedExercises = baseDef.exercises.map { baseEx ->
+            customOverrides[baseEx.id] ?: baseEx
+        }
+        return baseDef.copy(exercises = updatedExercises)
     }
 
     fun getSuggestedProgression(

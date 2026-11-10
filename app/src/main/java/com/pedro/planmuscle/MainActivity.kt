@@ -4,6 +4,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -115,7 +116,7 @@ fun MainAppScreen(
         NavHost(
             navController = navController,
             startDestination = BottomNavItem.Dashboard.route,
-            modifier = Modifier.padding(innerPadding)
+            modifier = Modifier.padding(PaddingValues(bottom = innerPadding.calculateBottomPadding()))
         ) {
             composable(BottomNavItem.Dashboard.route) {
                 val dashboardViewModel: DashboardViewModel = viewModel(

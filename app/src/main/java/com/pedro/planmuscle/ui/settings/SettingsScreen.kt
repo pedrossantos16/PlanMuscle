@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -19,6 +20,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import com.pedro.planmuscle.domain.ExerciseDefinition
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -34,6 +36,10 @@ fun SettingsScreen(
     var fatInput by remember(state.activeProtocol) { mutableStateOf(state.activeProtocol?.fatTargetGrams?.toString() ?: "70") }
     var waterInput by remember(state.activeProtocol) { mutableStateOf(state.activeProtocol?.waterTargetMl?.toString() ?: "2600") }
     var showSavedToast by remember { mutableStateOf(false) }
+
+    // Controla se a seção de temas está expandida ou contraída
+    var themesExpanded by remember { mutableStateOf(false) }
+    var workoutEditExpanded by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -58,53 +64,72 @@ fun SettingsScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // Seção 1: Seleção de Tema / Paleta de Cores (Escuro e Claro)
+            // Seção 1: Seleção de Tema / Paleta de Cores (EXPANDÍVEL / SANFONA)
             item {
                 Card(modifier = Modifier.fillMaxWidth()) {
                     Column(modifier = Modifier.padding(16.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(imageVector = Icons.Default.Palette, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(text = "Paleta de Cores & Temas", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                        }
-                        Text(
-                            text = "Escolha entre temas escuros e claros personalizados:",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Spacer(modifier = Modifier.height(12.dp))
-
-                        Text(text = "🌙 Temas Escuros (Dark)", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
-                        Spacer(modifier = Modifier.height(4.dp))
-                        com.pedro.planmuscle.ui.theme.AppThemeOption.entries.filter { it.isDark }.forEach { option ->
-                            ThemeOptionRow(
-                                option = option,
-                                isSelected = state.selectedTheme == option,
-                                onSelect = {
-                                    viewModel.selectTheme(option)
-                                    onThemeChanged(option)
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { themesExpanded = !themesExpanded },
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(imageVector = Icons.Default.Palette, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Column {
+                                    Text(text = "Paletas de Cores & Temas", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                                    Text(
+                                        text = "Atual: ${state.selectedTheme.title}",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
                                 }
+                            }
+                            Icon(
+                                imageVector = if (themesExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                                contentDescription = "Contrair/Expandir"
                             )
                         }
 
-                        Spacer(modifier = Modifier.height(12.dp))
-                        Text(text = "☀️ Temas Claros (Light)", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
-                        Spacer(modifier = Modifier.height(4.dp))
-                        com.pedro.planmuscle.ui.theme.AppThemeOption.entries.filter { !it.isDark }.forEach { option ->
-                            ThemeOptionRow(
-                                option = option,
-                                isSelected = state.selectedTheme == option,
-                                onSelect = {
-                                    viewModel.selectTheme(option)
-                                    onThemeChanged(option)
+                        AnimatedVisibility(visible = themesExpanded) {
+                            Column(modifier = Modifier.padding(top = 12.dp)) {
+                                HorizontalDivider(modifier = Modifier.padding(bottom = 12.dp))
+
+                                Text(text = "🌙 Temas Escuros (Dark)", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+                                Spacer(modifier = Modifier.height(4.dp))
+                                com.pedro.planmuscle.ui.theme.AppThemeOption.entries.filter { it.isDark }.forEach { option ->
+                                    ThemeOptionRow(
+                                        option = option,
+                                        isSelected = state.selectedTheme == option,
+                                        onSelect = {
+                                            viewModel.selectTheme(option)
+                                            onThemeChanged(option)
+                                        }
+                                    )
                                 }
-                            )
+
+                                Spacer(modifier = Modifier.height(12.dp))
+                                Text(text = "☀️ Temas Claros (Light)", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+                                Spacer(modifier = Modifier.height(4.dp))
+                                com.pedro.planmuscle.ui.theme.AppThemeOption.entries.filter { !it.isDark }.forEach { option ->
+                                    ThemeOptionRow(
+                                        option = option,
+                                        isSelected = state.selectedTheme == option,
+                                        onSelect = {
+                                            viewModel.selectTheme(option)
+                                            onThemeChanged(option)
+                                        }
+                                    )
+                                }
+                            }
                         }
                     }
                 }
             }
 
-            // Seção 2: Edição do Plano & Metas
+            // Seção 2: Edição do Plano Alimentar e Água
             item {
                 Card(modifier = Modifier.fillMaxWidth()) {
                     Column(modifier = Modifier.padding(16.dp)) {
@@ -177,7 +202,7 @@ fun SettingsScreen(
                         ) {
                             Icon(imageVector = Icons.Default.Save, contentDescription = null)
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text("SALVAR NOVAS METAS")
+                            Text("SALVAR NOVAS METAS ALIMENTARES")
                         }
 
                         if (showSavedToast) {
@@ -192,7 +217,85 @@ fun SettingsScreen(
                 }
             }
 
-            // Seção 3: Guia Interativo do Aplicativo
+            // Seção 3: EDIÇÃO COMPLETA DE TREINOS E EXERCÍCIOS (Treino A & B)
+            item {
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { workoutEditExpanded = !workoutEditExpanded },
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(imageVector = Icons.Default.FitnessCenter, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Column {
+                                    Text(text = "💪 Personalizar Treinos A & B", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                                    Text(text = "Ajustar séries, reps e descansos de cada exercício", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                            }
+                            Icon(
+                                imageVector = if (workoutEditExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                                contentDescription = null
+                            )
+                        }
+
+                        AnimatedVisibility(visible = workoutEditExpanded) {
+                            Column(modifier = Modifier.padding(top = 12.dp)) {
+                                HorizontalDivider(modifier = Modifier.padding(bottom = 12.dp))
+
+                                Text(text = "🏋️ Treino A (Ênfase Peito, Quadríceps e Costas)", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                                Spacer(modifier = Modifier.height(8.dp))
+
+                                state.workoutA.exercises.forEach { exercise ->
+                                    ExerciseEditCard(
+                                        exercise = exercise,
+                                        onSave = { name, workSets, minReps, maxReps, restSecs, warmup ->
+                                            viewModel.saveCustomExercise(
+                                                exerciseId = exercise.id,
+                                                name = name,
+                                                workSets = workSets,
+                                                minReps = minReps,
+                                                maxReps = maxReps,
+                                                restSeconds = restSecs,
+                                                warmupGuidance = warmup
+                                            )
+                                        }
+                                    )
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                }
+
+                                Spacer(modifier = Modifier.height(16.dp))
+
+                                Text(text = "🏋️ Treino B (Ênfase Posteriores, Ombros e Braços)", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                                Spacer(modifier = Modifier.height(8.dp))
+
+                                state.workoutB.exercises.forEach { exercise ->
+                                    ExerciseEditCard(
+                                        exercise = exercise,
+                                        onSave = { name, workSets, minReps, maxReps, restSecs, warmup ->
+                                            viewModel.saveCustomExercise(
+                                                exerciseId = exercise.id,
+                                                name = name,
+                                                workSets = workSets,
+                                                minReps = minReps,
+                                                maxReps = maxReps,
+                                                restSeconds = restSecs,
+                                                warmupGuidance = warmup
+                                            )
+                                        }
+                                    )
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Seção 4: Guia Interativo do Aplicativo
             item {
                 Card(modifier = Modifier.fillMaxWidth()) {
                     Column(modifier = Modifier.padding(16.dp)) {
@@ -237,6 +340,121 @@ fun SettingsScreen(
                             icon = Icons.Default.Analytics,
                             content = "• Média Móvel de 7 Dias: Suaviza flutuações normais de retenção de água.\n• Revisão Quinzenal: Análise automática de ganho (~100–250g/sem) com recomendação de ajuste calórico (+150 kcal)."
                         )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun ExerciseEditCard(
+    exercise: ExerciseDefinition,
+    onSave: (name: String, workSets: Int, minReps: Int, maxReps: Int, restSecs: Int, warmup: String) -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+    var nameText by remember(exercise) { mutableStateOf(exercise.name) }
+    var setsText by remember(exercise) { mutableStateOf(exercise.defaultWorkSets.toString()) }
+    var minRepsText by remember(exercise) { mutableStateOf(exercise.targetRepsMin.toString()) }
+    var maxRepsText by remember(exercise) { mutableStateOf(exercise.targetRepsMax.toString()) }
+    var restText by remember(exercise) { mutableStateOf(exercise.restTimeSeconds.toString()) }
+    var warmupText by remember(exercise) { mutableStateOf(exercise.warmupGuidance) }
+    var savedMsg by remember { mutableStateOf(false) }
+
+    Surface(
+        shape = RoundedCornerShape(8.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { expanded = !expanded },
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column {
+                    Text(text = exercise.name, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
+                    Text(text = "${exercise.defaultWorkSets} séries × ${exercise.targetRepsMin}–${exercise.targetRepsMax} reps (${exercise.restTimeSeconds}s)", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Icon(imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore, contentDescription = null)
+            }
+
+            AnimatedVisibility(visible = expanded) {
+                Column(modifier = Modifier.padding(top = 8.dp)) {
+                    HorizontalDivider(modifier = Modifier.padding(bottom = 8.dp))
+
+                    OutlinedTextField(
+                        value = nameText,
+                        onValueChange = { nameText = it },
+                        label = { Text("Nome do Exercício") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(
+                            value = setsText,
+                            onValueChange = { setsText = it },
+                            label = { Text("Séries") },
+                            modifier = Modifier.weight(1f),
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                        )
+                        OutlinedTextField(
+                            value = minRepsText,
+                            onValueChange = { minRepsText = it },
+                            label = { Text("Reps Min") },
+                            modifier = Modifier.weight(1f),
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                        )
+                        OutlinedTextField(
+                            value = maxRepsText,
+                            onValueChange = { maxRepsText = it },
+                            label = { Text("Reps Max") },
+                            modifier = Modifier.weight(1f),
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    OutlinedTextField(
+                        value = restText,
+                        onValueChange = { restText = it },
+                        label = { Text("Tempo de Descanso (segundos)") },
+                        modifier = Modifier.fillMaxWidth(),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    OutlinedTextField(
+                        value = warmupText,
+                        onValueChange = { warmupText = it },
+                        label = { Text("Guia de Aquecimento") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Button(
+                        onClick = {
+                            val sets = setsText.toIntOrNull() ?: exercise.defaultWorkSets
+                            val minR = minRepsText.toIntOrNull() ?: exercise.targetRepsMin
+                            val maxR = maxRepsText.toIntOrNull() ?: exercise.targetRepsMax
+                            val rest = restText.toIntOrNull() ?: exercise.restTimeSeconds
+                            onSave(nameText, sets, minR, maxR, rest, warmupText)
+                            savedMsg = true
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Salvar Alterações")
+                    }
+
+                    if (savedMsg) {
+                        Text(text = "Exercício atualizado! ✓", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = 4.dp))
                     }
                 }
             }
