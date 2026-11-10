@@ -2,9 +2,8 @@ package com.pedro.planmuscle.ui.nutrition
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.pedro.planmuscle.data.model.MealCheckEntity
-import com.pedro.planmuscle.data.model.ProtocolEntity
-import com.pedro.planmuscle.data.repository.PlanMuscleRepository
+import com.pedro.planmuscle.data.local.entity.NutritionTargetEntity
+import com.pedro.planmuscle.domain.repository.PlanMuscleRepository
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
@@ -17,25 +16,25 @@ data class NutritionMealSlot(
     val title: String,
     val description: String,
     val proteinMeta: String,
-    val completed: Boolean
+    val status: String // "PLANNED", "COMPLETED_AS_PLANNED", "PARTIAL", "SKIPPED"
 )
 
 data class NutritionUiState(
-    val activeProtocol: ProtocolEntity? = null,
+    val activeTarget: NutritionTargetEntity? = null,
     val meals: List<NutritionMealSlot> = emptyList(),
-    val totalProteinConsumedGrams: Int = 0
+    val completedMealsCount: Int = 0,
+    val totalMealsCount: Int = 6
 )
 
 class NutritionViewModel(private val repository: PlanMuscleRepository) : ViewModel() {
 
-    val todayDate = repository.getTodayDateString()
+    val todayEpochDay = repository.getTodayEpochDay()
 
     val uiState: StateFlow<NutritionUiState> = combine(
-        repository.getActiveProtocol(),
-        repository.getMealChecksForDate(todayDate)
-    ) { protocol, checks ->
-        val activeProto = protocol ?: ProtocolEntity(startDate = todayDate)
-        val checkMap = checks.associate { it.mealId to it.completed }
+        repository.getActiveNutritionTarget(),
+        repository.getMealChecksForDate(todayEpochDay)
+    ) { target, checks ->
+        val statusMap = checks.associate { it.mealId to it.status }
 
         val mealsList = listOf(
             NutritionMealSlot(
@@ -44,7 +43,7 @@ class NutritionViewModel(private val repository: PlanMuscleRepository) : ViewMod
                 title = "Café da Manhã Proteico",
                 description = "200ml suco de laranja + 2 ovos inteiros + 2 fatias pão integral + 3–5g Creatina",
                 proteinMeta = "18–22 g Proteína",
-                completed = checkMap["BREAKFAST"] == true
+                status = statusMap["BREAKFAST"] ?: "PLANNED"
             ),
             NutritionMealSlot(
                 id = "MORNING_SNACK",
@@ -52,7 +51,7 @@ class NutritionViewModel(private val repository: PlanMuscleRepository) : ViewMod
                 title = "Lanche da Manhã (Trabalho)",
                 description = "1 iogurte proteico + 1 banana + 20g aveia",
                 proteinMeta = "15–20 g Proteína",
-                completed = checkMap["MORNING_SNACK"] == true
+                status = statusMap["MORNING_SNACK"] ?: "PLANNED"
             ),
             NutritionMealSlot(
                 id = "LUNCH",
@@ -60,7 +59,7 @@ class NutritionViewModel(private val repository: PlanMuscleRepository) : ViewMod
                 title = "Almoço Completo",
                 description = "150g arroz + 100g feijão + 150g proteína animal + alface/vegetais à vontade + 1 fruta",
                 proteinMeta = "40–50 g Proteína",
-                completed = checkMap["LUNCH"] == true
+                status = statusMap["LUNCH"] ?: "PLANNED"
             ),
             NutritionMealSlot(
                 id = "PRE_WORKOUT",
@@ -68,7 +67,7 @@ class NutritionViewModel(private val repository: PlanMuscleRepository) : ViewMod
                 title = "Lanche Pré-Treino (Trabalho)",
                 description = "2 fatias pão integral + 20g pasta de amendoim zero açúcar + 1 dose Whey Protein",
                 proteinMeta = "32–38 g Proteína",
-                completed = checkMap["PRE_WORKOUT"] == true
+                status = statusMap["PRE_WORKOUT"] ?: "PLANNED"
             ),
             NutritionMealSlot(
                 id = "SENAI_SNACK",
@@ -76,7 +75,7 @@ class NutritionViewModel(private val repository: PlanMuscleRepository) : ViewMod
                 title = "Lanche Pós-Treino (SENAI)",
                 description = "Sanduíche natural com 100g frango desfiado + 2 fatias pão integral + salada + 1 fruta",
                 proteinMeta = "30–35 g Proteína",
-                completed = checkMap["SENAI_SNACK"] == true
+                status = statusMap["SENAI_SNACK"] ?: "PLANNED"
             ),
             NutritionMealSlot(
                 id = "DINNER",
@@ -84,14 +83,17 @@ class NutritionViewModel(private val repository: PlanMuscleRepository) : ViewMod
                 title = "Jantar em Casa",
                 description = "120g frango ou peixe + 150g batata/arroz + vegetais/salada + azeite de oliva",
                 proteinMeta = "28–32 g Proteína",
-                completed = checkMap["DINNER"] == true
+                status = statusMap["DINNER"] ?: "PLANNED"
             )
         )
 
+        val completedCount = mealsList.count { it.status == "COMPLETED_AS_PLANNED" }
+
         NutritionUiState(
-            activeProtocol = activeProto,
+            activeTarget = target,
             meals = mealsList,
-            totalProteinConsumedGrams = mealsList.filter { it.completed }.sumOf { 25 } // Estimativa
+            completedMealsCount = completedCount,
+            totalMealsCount = mealsList.size
         )
     }.stateIn(
         scope = viewModelScope,
@@ -99,9 +101,9 @@ class NutritionViewModel(private val repository: PlanMuscleRepository) : ViewMod
         initialValue = NutritionUiState()
     )
 
-    fun toggleMeal(mealId: String, completed: Boolean) {
+    fun updateMealStatus(mealId: String, status: String) {
         viewModelScope.launch {
-            repository.toggleMealCheck(todayDate, mealId, completed)
+            repository.updateMealCheck(todayEpochDay, mealId, status)
         }
     }
 }

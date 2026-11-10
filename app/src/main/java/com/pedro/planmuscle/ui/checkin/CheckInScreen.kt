@@ -12,6 +12,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import com.pedro.planmuscle.data.local.entity.BodyMeasurementEntity
+import com.pedro.planmuscle.data.local.entity.DailyCheckInEntity
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -39,7 +41,7 @@ fun CheckInScreen(viewModel: CheckInViewModel) {
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
-            TabRow(selectedTabIndex = selectedTab) {
+            SecondaryTabRow(selectedTabIndex = selectedTab) {
                 Tab(
                     selected = selectedTab == 0,
                     onClick = { selectedTab = 0 },
@@ -55,8 +57,8 @@ fun CheckInScreen(viewModel: CheckInViewModel) {
             if (selectedTab == 0) {
                 DailyCheckInForm(
                     initialCheckIn = state.checkIn,
-                    onSave = { weight, readiness, sleepHours, sleepQuality, notes ->
-                        viewModel.saveCheckIn(weight, readiness, sleepHours, sleepQuality, notes)
+                    onSave = { weight, readiness, sleepMin, sleepQuality, pain, notes ->
+                        viewModel.saveCheckIn(weight, readiness, sleepMin, sleepQuality, pain, notes)
                     }
                 )
             } else {
@@ -73,13 +75,14 @@ fun CheckInScreen(viewModel: CheckInViewModel) {
 
 @Composable
 fun DailyCheckInForm(
-    initialCheckIn: com.pedro.planmuscle.data.model.DailyCheckInEntity?,
-    onSave: (weight: Float?, readiness: Int?, sleepHours: Float?, sleepQuality: Int?, notes: String) -> Unit
+    initialCheckIn: DailyCheckInEntity?,
+    onSave: (weight: Float?, readiness: Int?, sleepMinutes: Int?, sleepQuality: Int?, pain: Boolean, notes: String) -> Unit
 ) {
     var weightText by remember(initialCheckIn) { mutableStateOf(initialCheckIn?.weightKg?.toString() ?: "") }
-    var sleepHoursText by remember(initialCheckIn) { mutableStateOf(initialCheckIn?.sleepHours?.toString() ?: "") }
+    var sleepHoursText by remember(initialCheckIn) { mutableStateOf(if (initialCheckIn?.sleepMinutes != null) (initialCheckIn.sleepMinutes / 60.0f).toString() else "") }
     var readiness by remember(initialCheckIn) { mutableIntStateOf(initialCheckIn?.readinessLevel ?: 4) }
     var sleepQuality by remember(initialCheckIn) { mutableIntStateOf(initialCheckIn?.sleepQuality ?: 4) }
+    var unusualPain by remember(initialCheckIn) { mutableStateOf(initialCheckIn?.unusualPain ?: false) }
     var notesText by remember(initialCheckIn) { mutableStateOf(initialCheckIn?.notes ?: "") }
     var savedMessage by remember { mutableStateOf(false) }
 
@@ -130,7 +133,7 @@ fun DailyCheckInForm(
                     )
                     Spacer(modifier = Modifier.height(8.dp))
 
-                    Text("Nível de Disposição (Readiness: 1 a 5):")
+                    Text("Nível de Disposição / Readiness (1 a 5):")
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween
@@ -159,6 +162,15 @@ fun DailyCheckInForm(
                             )
                         }
                     }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(
+                            checked = unusualPain,
+                            onCheckedChange = { unusualPain = it }
+                        )
+                        Text("Dor ou desconforto articular incomum hoje", style = MaterialTheme.typography.bodySmall)
+                    }
                 }
             }
         }
@@ -176,7 +188,7 @@ fun DailyCheckInForm(
                     OutlinedTextField(
                         value = notesText,
                         onValueChange = { notesText = it },
-                        label = { Text("Anotações gerais (ex: treino rendeu muito, cansaço no SENAI)") },
+                        label = { Text("Anotações gerais") },
                         modifier = Modifier.fillMaxWidth(),
                         maxLines = 3
                     )
@@ -187,11 +199,15 @@ fun DailyCheckInForm(
         item {
             Button(
                 onClick = {
+                    val w = weightText.replace(',', '.').toFloatOrNull()
+                    val sHours = sleepHoursText.replace(',', '.').toFloatOrNull()
+                    val sleepMin = if (sHours != null) (sHours * 60).toInt() else null
                     onSave(
-                        weightText.toFloatOrNull(),
+                        w,
                         readiness,
-                        sleepHoursText.toFloatOrNull(),
+                        sleepMin,
                         sleepQuality,
+                        unusualPain,
                         notesText
                     )
                     savedMessage = true
@@ -217,7 +233,7 @@ fun DailyCheckInForm(
 
 @Composable
 fun WeeklyMeasurementForm(
-    initialMeasurement: com.pedro.planmuscle.data.model.BodyMeasurementEntity?,
+    initialMeasurement: BodyMeasurementEntity?,
     onSave: (waist: Float?, arm: Float?, thigh: Float?, chest: Float?) -> Unit
 ) {
     var waistText by remember(initialMeasurement) { mutableStateOf(initialMeasurement?.waistCm?.toString() ?: "") }
@@ -241,7 +257,7 @@ fun WeeklyMeasurementForm(
                         fontWeight = FontWeight.Bold
                     )
                     Text(
-                        text = "Recomendado medir uma vez por semana em jejum",
+                        text = "Recomendado medir 1x por semana em jejum",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -293,10 +309,10 @@ fun WeeklyMeasurementForm(
             Button(
                 onClick = {
                     onSave(
-                        waistText.toFloatOrNull(),
-                        armText.toFloatOrNull(),
-                        thighText.toFloatOrNull(),
-                        chestText.toFloatOrNull()
+                        waistText.replace(',', '.').toFloatOrNull(),
+                        armText.replace(',', '.').toFloatOrNull(),
+                        thighText.replace(',', '.').toFloatOrNull(),
+                        chestText.replace(',', '.').toFloatOrNull()
                     )
                     savedMessage = true
                 },

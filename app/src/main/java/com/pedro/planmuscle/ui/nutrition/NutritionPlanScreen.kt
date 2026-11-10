@@ -15,6 +15,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.pedro.planmuscle.data.local.entity.NutritionTargetEntity
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -33,7 +34,7 @@ fun NutritionPlanScreen(viewModel: NutritionViewModel) {
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = "Plano & Macros",
+                            text = "Plano Alimentar & Aderência",
                             fontWeight = FontWeight.Bold
                         )
                     }
@@ -53,7 +54,7 @@ fun NutritionPlanScreen(viewModel: NutritionViewModel) {
         ) {
             // Header Compacto de Macros com Badges
             item {
-                MacroOverviewBar(protocol = state.activeProtocol)
+                MacroOverviewBar(target = state.activeTarget)
             }
 
             item {
@@ -65,14 +66,9 @@ fun NutritionPlanScreen(viewModel: NutritionViewModel) {
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "Refeições do Dia",
+                        text = "Aderência Alimentar: ${state.completedMealsCount} de ${state.totalMealsCount} refeições",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold
-                    )
-                    Text(
-                        text = "Toque para detalhes",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
@@ -80,7 +76,7 @@ fun NutritionPlanScreen(viewModel: NutritionViewModel) {
             items(state.meals) { meal ->
                 CompactMealCard(
                     meal = meal,
-                    onToggle = { completed -> viewModel.toggleMeal(meal.id, completed) }
+                    onStatusChange = { newStatus -> viewModel.updateMealStatus(meal.id, newStatus) }
                 )
             }
         }
@@ -88,7 +84,7 @@ fun NutritionPlanScreen(viewModel: NutritionViewModel) {
 }
 
 @Composable
-fun MacroOverviewBar(protocol: com.pedro.planmuscle.data.model.ProtocolEntity?) {
+fun MacroOverviewBar(target: NutritionTargetEntity?) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
@@ -104,7 +100,7 @@ fun MacroOverviewBar(protocol: com.pedro.planmuscle.data.model.ProtocolEntity?) 
                     Icon(imageVector = Icons.Default.LocalFireDepartment, contentDescription = null, tint = Color(0xFFFF6D00))
                     Spacer(modifier = Modifier.width(4.dp))
                     Text(
-                        text = "${protocol?.calorieTarget ?: 2550} kcal",
+                        text = "${target?.calorieTarget ?: 2550} kcal",
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold
                     )
@@ -114,7 +110,7 @@ fun MacroOverviewBar(protocol: com.pedro.planmuscle.data.model.ProtocolEntity?) 
                     color = MaterialTheme.colorScheme.primary
                 ) {
                     Text(
-                        text = "Superávit Limpo",
+                        text = "Meta Versionada",
                         color = Color.White,
                         style = MaterialTheme.typography.labelSmall,
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
@@ -127,10 +123,10 @@ fun MacroOverviewBar(protocol: com.pedro.planmuscle.data.model.ProtocolEntity?) 
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                MacroChip(icon = Icons.Default.Egg, label = "Proteína", value = "${protocol?.proteinTargetGrams ?: 150}g")
-                MacroChip(icon = Icons.Default.Grain, label = "Carbos", value = "${protocol?.carbTargetGrams ?: 330}g")
-                MacroChip(icon = Icons.Default.Opacity, label = "Gorduras", value = "${protocol?.fatTargetGrams ?: 70}g")
-                MacroChip(icon = Icons.Default.WaterDrop, label = "Água", value = "2.6 L")
+                MacroChip(icon = Icons.Default.Egg, label = "Proteína", value = "${target?.proteinTargetGrams ?: 150}g")
+                MacroChip(icon = Icons.Default.Grain, label = "Carbos", value = "${target?.carbTargetGrams ?: 330}g")
+                MacroChip(icon = Icons.Default.Opacity, label = "Gorduras", value = "${target?.fatTargetGrams ?: 70}g")
+                MacroChip(icon = Icons.Default.WaterDrop, label = "Água", value = "${(target?.waterTargetMl ?: 2600) / 1000.0f}L")
             }
         }
     }
@@ -160,9 +156,11 @@ fun MacroChip(icon: androidx.compose.ui.graphics.vector.ImageVector, label: Stri
 @Composable
 fun CompactMealCard(
     meal: NutritionMealSlot,
-    onToggle: (Boolean) -> Unit
+    onStatusChange: (String) -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
+
+    val isCompleted = meal.status == "COMPLETED_AS_PLANNED"
 
     val iconVector = when (meal.id) {
         "BREAKFAST" -> Icons.Default.FreeBreakfast
@@ -187,8 +185,10 @@ fun CompactMealCard(
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Checkbox(
-                        checked = meal.completed,
-                        onCheckedChange = onToggle
+                        checked = isCompleted,
+                        onCheckedChange = { checked ->
+                            onStatusChange(if (checked) "COMPLETED_AS_PLANNED" else "PLANNED")
+                        }
                     )
                     Icon(
                         imageVector = iconVector,
@@ -221,7 +221,7 @@ fun CompactMealCard(
 
             AnimatedVisibility(visible = expanded) {
                 Column(modifier = Modifier.padding(top = 8.dp, start = 32.dp)) {
-                    Divider(modifier = Modifier.padding(bottom = 8.dp))
+                    HorizontalDivider(modifier = Modifier.padding(bottom = 8.dp))
                     Text(
                         text = meal.description,
                         style = MaterialTheme.typography.bodySmall,

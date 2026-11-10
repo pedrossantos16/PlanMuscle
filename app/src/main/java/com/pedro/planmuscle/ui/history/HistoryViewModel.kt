@@ -2,77 +2,70 @@ package com.pedro.planmuscle.ui.history
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.pedro.planmuscle.data.model.BodyMeasurementEntity
-import com.pedro.planmuscle.data.model.DailyCheckInEntity
-import com.pedro.planmuscle.data.model.ProtocolEntity
-import com.pedro.planmuscle.data.repository.PlanMuscleRepository
-import com.pedro.planmuscle.domain.WorkoutScheduler
+import com.pedro.planmuscle.data.local.converter.DateUtils
+import com.pedro.planmuscle.data.local.entity.BiweeklyReviewEntity
+import com.pedro.planmuscle.data.local.entity.BodyMeasurementEntity
+import com.pedro.planmuscle.data.local.entity.DailyCheckInEntity
+import com.pedro.planmuscle.data.local.entity.NutritionTargetEntity
+import com.pedro.planmuscle.domain.engine.WorkoutScheduler
+import com.pedro.planmuscle.domain.repository.PlanMuscleRepository
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
-data class WeightDataPoint(
-    val date: String,
-    val dailyWeight: Float?,
-    val movingAverage7Days: Float?
-)
-
-data class BiWeeklyReviewCard(
-    val reviewWeekNumber: Int,
-    val avgWeightGainPerWeekKg: Float,
-    val weightGainStatus: String, // "No alvo (~100-250g/sem)", "Lento", "Muito rápido"
-    val waistChangeCm: Float,
-    val avgReadinessScore: Float,
-    val isAdjustmentRecommended: Boolean,
-    val recommendationMessage: String,
-    val suggestedCalorieChange: Int
+data class CalendarWeightPoint(
+    val dateEpochDay: Long,
+    val dateString: String,
+    val dailyWeightKg: Float?,
+    val movingAverage7DaysKg: Float?
 )
 
 data class HistoryUiState(
-    val activeProtocol: ProtocolEntity? = null,
+    val activeNutritionTarget: NutritionTargetEntity? = null,
     val currentWeekNumber: Int = 1,
-    val weightDataPoints: List<WeightDataPoint> = emptyList(),
+    val weightDataPoints: List<CalendarWeightPoint> = emptyList(),
     val measurementsHistory: List<BodyMeasurementEntity> = emptyList(),
-    val reviewCard: BiWeeklyReviewCard? = null
+    val pendingReview: BiweeklyReviewEntity? = null
 )
 
 class HistoryViewModel(private val repository: PlanMuscleRepository) : ViewModel() {
 
-    val todayDate = repository.getTodayDateString()
+    val todayEpochDay = repository.getTodayEpochDay()
 
     val uiState: StateFlow<HistoryUiState> = combine(
-        repository.getActiveProtocol(),
+        repository.getActiveProgram(),
+        repository.getActiveNutritionTarget(),
         repository.getAllCheckIns(),
         repository.getAllMeasurements()
-    ) { protocol, checkIns, measurements ->
-        val activeProto = protocol ?: ProtocolEntity(startDate = todayDate)
-        val week = WorkoutScheduler.getCurrentWeekNumber(activeProto.startDate, todayDate)
+    ) { program, target, checkIns, measurements ->
+        val startDay = program?.startDateEpochDay ?: todayEpochDay
+        val week = WorkoutScheduler.getProtocolWeek(startDay, todayEpochDay)
 
-        // Compute 7-day moving average for weights
-        val sortedCheckIns = checkIns.sortedBy { it.date }
-        val points = sortedCheckIns.mapIndexed { index, checkIn ->
-            val last7 = sortedCheckIns.subList((index - 6).coerceAtLeast(0), index + 1)
-                .mapNotNull { it.weightKg }
-            val avg = if (last7.isNotEmpty()) last7.average().toFloat() else null
+        // Compute 7-calendar-day moving average
+        val sortedCheckIns = checkIns.sortedBy { it.dateEpochDay }
+        val points = sortedCheckIns.map { current ->
+            val window7Days = sortedCheckIns.filter {
+                it.dateEpochDay in (current.dateEpochDay - 6)..current.dateEpochDay
+            }.mapNotNull { it.weightKg }
 
-            WeightDataPoint(
-                date = checkIn.date,
-                dailyWeight = checkIn.weightKg,
-                movingAverage7Days = avg
+            val avg = if (window7Days.isNotEmpty()) window7Days.average().toFloat() else null
+
+            CalendarWeightPoint(
+                dateEpochDay = current.dateEpochDay,
+                dateString = DateUtils.epochDayToDateString(current.dateEpochDay),
+                dailyWeightKg = current.weightKg,
+                movingAverage7DaysKg = avg
             )
         }
 
-        // Generate Bi-Weekly Review Card if enough data exists
-        val review = generateReviewCard(week, sortedCheckIns, measurements)
-
         HistoryUiState(
-            activeProtocol = activeProto,
+            activeNutritionTarget = target,
             currentWeekNumber = week,
-            weightDataPoints = points,
-            measurementsHistory = measurements.sortedByDescending { it.date },
-            reviewCard = review
+            weightDataPoints = points.sortedByDescending { it.dateEpochDay },
+            measurementsHistory = measurements.sortedByDescending { it.dateEpochDay },
+            pendingReview = null
         )
     }.stateIn(
         scope = viewModelScope,
@@ -80,56 +73,33 @@ class HistoryViewModel(private val repository: PlanMuscleRepository) : ViewModel
         initialValue = HistoryUiState()
     )
 
-    private fun generateReviewCard(
-        currentWeek: Int,
-        checkIns: List<DailyCheckInEntity>,
-        measurements: List<BodyMeasurementEntity>
-    ): BiWeeklyReviewCard? {
-        if (checkIns.size < 7) return null
-
-        val weights = checkIns.mapNotNull { it.weightKg }
-        val firstWeight = weights.firstOrNull() ?: 76.0f
-        val lastWeight = weights.lastOrNull() ?: 76.0f
-        val weeksDiff = (checkIns.size / 7).coerceAtLeast(1)
-        val ratePerWeek = (lastWeight - firstWeight) / weeksDiff
-
-        val status = when {
-            ratePerWeek in 0.10f..0.25f -> "No alvo (~100–250g/semana) ✓"
-            ratePerWeek < 0.10f -> "Abaixo da meta de ganho de massa"
-            else -> "Acima do esperado (Risco de acúmulo de gordura)"
+    fun generateReviewIfDue(programId: Long) {
+        viewModelScope.launch {
+            repository.generateBiweeklyReviewIfDue(programId)
         }
-
-        val firstWaist = measurements.lastOrNull()?.waistCm ?: 0.0f
-        val lastWaist = measurements.firstOrNull()?.waistCm ?: 0.0f
-        val waistDiff = if (firstWaist > 0 && lastWaist > 0) lastWaist - firstWaist else 0.0f
-
-        val readinessList = checkIns.mapNotNull { it.readinessLevel }
-        val avgReadiness = if (readinessList.isNotEmpty()) readinessList.average().toFloat() else 4.0f
-
-        val isStable = ratePerWeek < 0.05f
-        val recommendedCalorieChange = if (isStable) 150 else 0
-
-        return BiWeeklyReviewCard(
-            reviewWeekNumber = (currentWeek / 2) * 2,
-            avgWeightGainPerWeekKg = ratePerWeek,
-            weightGainStatus = status,
-            waistChangeCm = waistDiff,
-            avgReadinessScore = avgReadiness,
-            isAdjustmentRecommended = isStable,
-            recommendationMessage = if (isStable) {
-                "Seu peso ficou estável nas últimas semanas. Recomendado aumentar +150 kcal para manter o superávit e acelerar a hipertrofia."
-            } else {
-                "Sua evolução está excelente. Mantenha os macronutrientes atuais!"
-            },
-            suggestedCalorieChange = recommendedCalorieChange
-        )
     }
 
-    fun applyCalorieAdjustment(newCalories: Int) {
+    fun acceptReview(review: BiweeklyReviewEntity) {
         viewModelScope.launch {
-            repository.createNewProtocol(
-                calorieTarget = newCalories
-            )
+            repository.acceptReviewAdjustment(review.id)
+            if (review.calorieAdjustment != 0) {
+                val currentTarget = repository.getActiveNutritionTarget()
+                val activeCal = currentTarget.let { null } ?: 2550
+                repository.updateNutritionTarget(
+                    calories = activeCal + review.calorieAdjustment,
+                    protein = 150,
+                    carbs = 330,
+                    fats = 70,
+                    waterMl = 2600,
+                    reason = "Ajuste quinzenal aceito (+${review.calorieAdjustment} kcal)"
+                )
+            }
+        }
+    }
+
+    fun rejectReview(reviewId: Long) {
+        viewModelScope.launch {
+            repository.rejectReview(reviewId)
         }
     }
 }

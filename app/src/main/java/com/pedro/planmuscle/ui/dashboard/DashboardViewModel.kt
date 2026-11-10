@@ -2,14 +2,13 @@ package com.pedro.planmuscle.ui.dashboard
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.pedro.planmuscle.data.model.MealCheckEntity
-import com.pedro.planmuscle.data.model.ProtocolEntity
-import com.pedro.planmuscle.data.model.SupplementIntakeEntity
-import com.pedro.planmuscle.data.model.WorkoutSessionEntity
-import com.pedro.planmuscle.data.repository.PlanMuscleRepository
-import com.pedro.planmuscle.domain.HydrationEngine
-import com.pedro.planmuscle.domain.TrainingPhaseEngine
-import com.pedro.planmuscle.domain.WorkoutScheduler
+import com.pedro.planmuscle.data.local.entity.MealCheckEntity
+import com.pedro.planmuscle.data.local.entity.NutritionTargetEntity
+import com.pedro.planmuscle.data.local.entity.SupplementIntakeEntity
+import com.pedro.planmuscle.data.local.entity.WorkoutSessionEntity
+import com.pedro.planmuscle.domain.engine.HydrationEngine
+import com.pedro.planmuscle.domain.engine.WorkoutScheduler
+import com.pedro.planmuscle.domain.repository.PlanMuscleRepository
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
@@ -18,10 +17,14 @@ import kotlinx.coroutines.launch
 import java.util.Calendar
 
 data class DashboardUiState(
-    val todayDate: String = "",
-    val activeProtocol: ProtocolEntity? = null,
+    val todayDateString: String = "",
+    val todayEpochDay: Long = 0L,
+    val activeNutritionTarget: NutritionTargetEntity? = null,
     val weekNumber: Int = 1,
     val todayWorkoutType: String = "A",
+    val scheduleTitle: String = "",
+    val scheduleSubtitle: String = "",
+    val isWorkoutDay: Boolean = true,
     val workoutSession: WorkoutSessionEntity? = null,
     val totalWaterMl: Int = 0,
     val hydrationMessage: String = "",
@@ -31,32 +34,38 @@ data class DashboardUiState(
 
 class DashboardViewModel(private val repository: PlanMuscleRepository) : ViewModel() {
 
-    val todayDate = repository.getTodayDateString()
+    val todayEpochDay = repository.getTodayEpochDay()
+    val todayDateString = repository.getTodayDateString()
 
     val uiState: StateFlow<DashboardUiState> = combine(
-        repository.getActiveProtocol(),
-        repository.getTotalWaterForDate(todayDate),
-        repository.getWorkoutSessionForDate(todayDate),
-        repository.getMealChecksForDate(todayDate),
-        repository.getSupplementIntakesForDate(todayDate)
-    ) { protocol, totalWater, session, meals, supplements ->
-        val activeProto = protocol ?: ProtocolEntity(startDate = todayDate)
-        val week = WorkoutScheduler.getCurrentWeekNumber(activeProto.startDate, todayDate)
-        val workoutType = WorkoutScheduler.getWorkoutTypeForDate(activeProto.startDate, todayDate)
+        repository.getActiveProgram(),
+        repository.getActiveNutritionTarget(),
+        repository.getTotalWaterForDate(todayEpochDay),
+        repository.getMealChecksForDate(todayEpochDay),
+        repository.getSupplementIntakesForDate(todayEpochDay)
+    ) { program, target, totalWater, meals, supplements ->
+        val startDay = program?.startDateEpochDay ?: todayEpochDay
+        val week = WorkoutScheduler.getProtocolWeek(startDay, todayEpochDay)
+        val schedule = WorkoutScheduler.getScheduleStatus(startDay, todayEpochDay, null)
 
         val calendar = Calendar.getInstance()
         val hour = calendar.get(Calendar.HOUR_OF_DAY)
         val minute = calendar.get(Calendar.MINUTE)
 
+        val activeTarget = target ?: NutritionTargetEntity(validFromEpochDay = todayEpochDay)
         val waterMl = totalWater ?: 0
-        val hydMessage = HydrationEngine.getHydrationStatusMessage(waterMl, hour, minute)
+        val hydMessage = HydrationEngine.getHydrationStatusMessage(waterMl, hour, minute, activeTarget.waterTargetMl)
 
         DashboardUiState(
-            todayDate = todayDate,
-            activeProtocol = activeProto,
+            todayDateString = todayDateString,
+            todayEpochDay = todayEpochDay,
+            activeNutritionTarget = activeTarget,
             weekNumber = week,
-            todayWorkoutType = workoutType,
-            workoutSession = session,
+            todayWorkoutType = schedule.plannedWorkoutType,
+            scheduleTitle = schedule.scheduleTitle,
+            scheduleSubtitle = schedule.scheduleSubtitle,
+            isWorkoutDay = schedule.isWorkoutDay,
+            workoutSession = null,
             totalWaterMl = waterMl,
             hydrationMessage = hydMessage,
             mealChecks = meals,
@@ -65,30 +74,34 @@ class DashboardViewModel(private val repository: PlanMuscleRepository) : ViewMod
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5000),
-        initialValue = DashboardUiState(todayDate = todayDate)
+        initialValue = DashboardUiState(todayDateString = todayDateString, todayEpochDay = todayEpochDay)
     )
 
     fun addWater(amountMl: Int) {
         viewModelScope.launch {
-            repository.addWater(todayDate, amountMl)
+            repository.addWater(todayEpochDay, amountMl)
         }
     }
 
-    fun toggleMeal(mealId: String, completed: Boolean) {
+    fun deleteLastWaterEntry() {
         viewModelScope.launch {
-            repository.toggleMealCheck(todayDate, mealId, completed)
+            repository.deleteLastWaterEntry(todayEpochDay)
         }
     }
 
-    fun logSupplement(supplementId: String, amount: String) {
+    fun updateMealCheck(mealId: String, status: String) {
         viewModelScope.launch {
-            repository.logSupplement(todayDate, supplementId, amount)
+            repository.updateMealCheck(todayEpochDay, mealId, status)
         }
     }
 
-    fun startWorkoutSession(workoutType: String, weekNumber: Int) {
+    fun toggleSupplement(supplementId: String, amount: String) {
         viewModelScope.launch {
-            repository.startWorkoutSession(todayDate, weekNumber, workoutType)
+            repository.toggleSupplementIntake(todayEpochDay, supplementId, amount)
         }
+    }
+
+    suspend fun startOrResumeWorkoutSession(): Long {
+        return repository.startOrResumeWorkoutSession(todayEpochDay)
     }
 }

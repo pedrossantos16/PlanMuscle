@@ -2,9 +2,9 @@ package com.pedro.planmuscle.ui.checkin
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.pedro.planmuscle.data.model.BodyMeasurementEntity
-import com.pedro.planmuscle.data.model.DailyCheckInEntity
-import com.pedro.planmuscle.data.repository.PlanMuscleRepository
+import com.pedro.planmuscle.data.local.entity.BodyMeasurementEntity
+import com.pedro.planmuscle.data.local.entity.DailyCheckInEntity
+import com.pedro.planmuscle.domain.repository.PlanMuscleRepository
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
@@ -12,7 +12,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 data class CheckInUiState(
-    val date: String = "",
+    val dateEpochDay: Long = 0L,
     val checkIn: DailyCheckInEntity? = null,
     val measurement: BodyMeasurementEntity? = null,
     val isSaved: Boolean = false
@@ -20,37 +20,39 @@ data class CheckInUiState(
 
 class CheckInViewModel(private val repository: PlanMuscleRepository) : ViewModel() {
 
-    val todayDate = repository.getTodayDateString()
+    val todayEpochDay = repository.getTodayEpochDay()
 
     val uiState: StateFlow<CheckInUiState> = combine(
-        repository.getDailyCheckIn(todayDate),
-        repository.getBodyMeasurement(todayDate)
+        repository.getDailyCheckIn(todayEpochDay),
+        repository.getBodyMeasurement(todayEpochDay)
     ) { checkIn, measurement ->
         CheckInUiState(
-            date = todayDate,
+            dateEpochDay = todayEpochDay,
             checkIn = checkIn,
             measurement = measurement
         )
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5000),
-        initialValue = CheckInUiState(date = todayDate)
+        initialValue = CheckInUiState(dateEpochDay = todayEpochDay)
     )
 
     fun saveCheckIn(
         weightKg: Float?,
         readinessLevel: Int?,
-        sleepHours: Float?,
+        sleepMinutes: Int?,
         sleepQuality: Int?,
+        unusualPain: Boolean,
         notes: String
     ) {
         viewModelScope.launch {
             val entity = DailyCheckInEntity(
-                date = todayDate,
+                dateEpochDay = todayEpochDay,
                 weightKg = weightKg,
                 readinessLevel = readinessLevel,
-                sleepHours = sleepHours,
+                sleepMinutes = sleepMinutes,
                 sleepQuality = sleepQuality,
+                unusualPain = unusualPain,
                 notes = notes
             )
             repository.saveCheckIn(entity)
@@ -65,7 +67,7 @@ class CheckInViewModel(private val repository: PlanMuscleRepository) : ViewModel
     ) {
         viewModelScope.launch {
             val entity = BodyMeasurementEntity(
-                date = todayDate,
+                dateEpochDay = todayEpochDay,
                 waistCm = waistCm,
                 armCm = armCm,
                 thighCm = thighCm,
