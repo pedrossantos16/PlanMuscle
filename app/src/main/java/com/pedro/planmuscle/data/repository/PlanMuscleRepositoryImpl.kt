@@ -11,6 +11,8 @@ import com.pedro.planmuscle.domain.engine.WorkoutScheduler
 import com.pedro.planmuscle.domain.repository.PlanMuscleRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.firstOrNull
+import org.json.JSONArray
+import org.json.JSONObject
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -157,23 +159,19 @@ class PlanMuscleRepositoryImpl(private val database: PlanMuscleDatabase) : PlanM
 
     override suspend fun startOrResumeWorkoutSession(targetDateEpochDay: Long): Long {
         return database.withTransaction {
-            // 1. Check for IN_PROGRESS session
             val inProgress = sessionDao.getInProgressSession()
             if (inProgress != null) {
                 return@withTransaction inProgress.id
             }
 
-            // 2. Ensure program exists
             val programId = ensureActiveProgramSeeded(targetDateEpochDay)
             val program = programDao.getActiveProgramOneShot() ?: return@withTransaction 0L
 
-            // 3. Determine protocol week & next workout type
             val week = WorkoutScheduler.getProtocolWeek(program.startDateEpochDay, targetDateEpochDay)
             val completed = sessionDao.getCompletedSessionsOneShot(programId)
             val lastType = completed.firstOrNull()?.workoutType
             val workoutType = WorkoutScheduler.determineNextWorkoutType(lastType)
 
-            // 4. Create Session Entity
             val session = WorkoutSessionEntity(
                 trainingProgramId = programId,
                 workoutType = workoutType,
@@ -183,7 +181,6 @@ class PlanMuscleRepositoryImpl(private val database: PlanMuscleDatabase) : PlanM
             )
             val sessionId = sessionDao.insertSession(session)
 
-            // 5. Generate Prescriptions Snapshot
             val phaseInfo = TrainingPhaseEngine.getPhaseForWeek(week)
             val templates = templateDao.getTemplatesForProgramOneShot(programId)
             val template = templates.firstOrNull { it.workoutType == workoutType }
@@ -306,6 +303,9 @@ class PlanMuscleRepositoryImpl(private val database: PlanMuscleDatabase) : PlanM
         reviewDao.getPendingReviewForProgram(programId)
 
     override suspend fun generateBiweeklyReviewIfDue(programId: Long): BiweeklyReviewEntity? {
+        val pending = reviewDao.getPendingReviewOneShot(programId)
+        if (pending != null) return pending
+
         val program = programDao.getActiveProgramOneShot() ?: return null
         val today = getTodayEpochDay()
         val currentWeek = WorkoutScheduler.getProtocolWeek(program.startDateEpochDay, today)
@@ -332,9 +332,38 @@ class PlanMuscleRepositoryImpl(private val database: PlanMuscleDatabase) : PlanM
         return review
     }
 
-    override suspend fun acceptReviewAdjustment(reviewId: Long) {
-        val now = System.currentTimeMillis()
-        reviewDao.updateReviewStatus(reviewId, "ACCEPTED", now)
+    override suspend fun acceptReviewAndApplyNutritionAdjustment(reviewId: Long) {
+        database.withTransaction {
+            val review = reviewDao.getReviewByIdOneShot(reviewId) ?: return@withTransaction
+            if (review.status != "PENDING") return@withTransaction
+
+            val activeTarget = nutritionDao.getActiveTargetOneShot()
+            val programId = review.trainingProgramId
+            val today = getTodayEpochDay()
+
+            val currentCal = activeTarget?.calorieTarget ?: 2550
+            val currentProtein = activeTarget?.proteinTargetGrams ?: 150
+            val currentCarbs = activeTarget?.carbTargetGrams ?: 330
+            val currentFats = activeTarget?.fatTargetGrams ?: 70
+            val currentWater = activeTarget?.waterTargetMl ?: 2600
+
+            val newCalories = currentCal + review.calorieAdjustment
+
+            val newTarget = NutritionTargetEntity(
+                trainingProgramId = programId,
+                validFromEpochDay = today,
+                calorieTarget = newCalories,
+                proteinTargetGrams = currentProtein,
+                carbTargetGrams = currentCarbs,
+                fatTargetGrams = currentFats,
+                waterTargetMl = currentWater,
+                adjustmentReason = "Ajuste quinzenal aceito (+${review.calorieAdjustment} kcal)"
+            )
+
+            val newTargetId = nutritionDao.insertTarget(newTarget)
+            nutritionDao.invalidatePreviousTargets(today, newTargetId)
+            reviewDao.updateReviewStatus(reviewId, "ACCEPTED", System.currentTimeMillis())
+        }
     }
 
     override suspend fun rejectReview(reviewId: Long) {
@@ -379,7 +408,6 @@ class PlanMuscleRepositoryImpl(private val database: PlanMuscleDatabase) : PlanM
         )
         exerciseDao.insertExercises(listOf(updatedEx))
 
-        // Update in WorkoutTemplateExerciseEntity in Room DB!
         templateDao.updateTemplateExercise(
             programId = programId,
             exerciseId = exerciseId,
@@ -390,7 +418,6 @@ class PlanMuscleRepositoryImpl(private val database: PlanMuscleDatabase) : PlanM
             warmupGuidance = warmupGuidance
         )
 
-        // Also update in memory engine
         TrainingPhaseEngine.updateExerciseDefinition(
             ExerciseDefinition(
                 id = exerciseId,
@@ -411,30 +438,95 @@ class PlanMuscleRepositoryImpl(private val database: PlanMuscleDatabase) : PlanM
         val meals = mealCheckDao.getAllMealChecksOneShot()
         val supplements = supplementDao.getAllSupplementIntakesOneShot()
 
-        val json = StringBuilder("{")
-        json.append("\"version\":2,")
-        json.append("\"exportedAt\":${System.currentTimeMillis()},")
-        json.append("\"dailyCheckInsCount\":${checkIns.size},")
-        json.append("\"measurementsCount\":${measurements.size},")
-        json.append("\"waterEntriesCount\":${water.size},")
-        json.append("\"mealChecksCount\":${meals.size},")
-        json.append("\"supplementsCount\":${supplements.size}")
-        json.append("}")
-        return json.toString()
+        val json = JSONObject()
+        json.put("schemaVersion", 2)
+        json.put("exportedAt", System.currentTimeMillis())
+
+        val checkInsArray = JSONArray()
+        checkIns.forEach { c ->
+            val item = JSONObject()
+            item.put("dateEpochDay", c.dateEpochDay)
+            item.put("weightKg", c.weightKg ?: 0.0)
+            item.put("readinessLevel", c.readinessLevel ?: 0)
+            item.put("sleepMinutes", c.sleepMinutes ?: 0)
+            item.put("sleepQuality", c.sleepQuality ?: 0)
+            item.put("unusualPain", c.unusualPain)
+            item.put("notes", c.notes)
+            checkInsArray.put(item)
+        }
+        json.put("dailyCheckIns", checkInsArray)
+
+        val measurementsArray = JSONArray()
+        measurements.forEach { m ->
+            val item = JSONObject()
+            item.put("dateEpochDay", m.dateEpochDay)
+            item.put("waistCm", m.waistCm ?: 0.0)
+            item.put("armCm", m.armCm ?: 0.0)
+            item.put("thighCm", m.thighCm ?: 0.0)
+            item.put("chestCm", m.chestCm ?: 0.0)
+            measurementsArray.put(item)
+        }
+        json.put("bodyMeasurements", measurementsArray)
+
+        val waterArray = JSONArray()
+        water.forEach { w ->
+            val item = JSONObject()
+            item.put("id", w.id)
+            item.put("dateEpochDay", w.dateEpochDay)
+            item.put("timestampEpochMillis", w.timestampEpochMillis)
+            item.put("amountMl", w.amountMl)
+            waterArray.put(item)
+        }
+        json.put("waterEntries", waterArray)
+
+        return json.toString(2)
     }
 
-    override suspend fun importDataFromJson(json: String): Boolean {
-        return json.contains("\"version\":2")
+    override suspend fun importDataFromJson(jsonString: String): Boolean {
+        return try {
+            val json = JSONObject(jsonString)
+            val schemaVersion = json.optInt("schemaVersion", json.optInt("version", 0))
+            if (schemaVersion != 2) return false
+
+            database.withTransaction {
+                if (json.has("dailyCheckIns")) {
+                    val arr = json.getJSONArray("dailyCheckIns")
+                    for (i in 0 until arr.length()) {
+                        val obj = arr.getJSONObject(i)
+                        checkInDao.insertOrUpdateCheckIn(
+                            DailyCheckInEntity(
+                                dateEpochDay = obj.getLong("dateEpochDay"),
+                                weightKg = obj.optDouble("weightKg", 0.0).toFloat(),
+                                readinessLevel = obj.optInt("readinessLevel", 4),
+                                sleepMinutes = obj.optInt("sleepMinutes", 450),
+                                sleepQuality = obj.optInt("sleepQuality", 4),
+                                unusualPain = obj.optBoolean("unusualPain", false),
+                                notes = obj.optString("notes", "")
+                            )
+                        )
+                    }
+                }
+            }
+            true
+        } catch (e: Exception) {
+            false
+        }
     }
 
     override suspend fun exportWorkoutsAndWeightsCsv(): String {
-        val sb = StringBuilder("Data,Sessao,Exercicio,Tipo,Serie,CargaKg,Reps,RIR\n")
-        val completed = sessionDao.getCompletedSessionsOneShot(1L)
+        val sb = StringBuilder("Data,Programa,Sessao,Exercicio,Tipo,Serie,CargaKg,Reps,RIR\n")
+        val program = programDao.getActiveProgramOneShot()
+        val programId = program?.id ?: 1L
+        val completed = sessionDao.getCompletedSessionsOneShot(programId)
+
         completed.forEach { s ->
             val logs = sessionDao.getSetLogsForSessionOneShot(s.id)
+            val prescriptions = sessionDao.getPrescriptionsForSessionOneShot(s.id).associateBy { it.id }
             val dateStr = DateUtils.epochDayToDateString(s.startedAtEpochMillis / 86_400_000L)
+
             logs.forEach { l ->
-                sb.append("$dateStr,Treino ${s.workoutType},${l.notes},${l.setType},${l.setIndex},${l.weightKg},${l.reps},${l.rir ?: "-"}\n")
+                val pName = prescriptions[l.sessionExercisePrescriptionId]?.exerciseNameSnapshot ?: "Exercicio"
+                sb.append("$dateStr,${program?.name ?: "Protocolo"},Treino ${s.workoutType},$pName,${l.setType},${l.setIndex},${l.weightKg},${l.reps},${l.rir ?: "-"}\n")
             }
         }
         return sb.toString()

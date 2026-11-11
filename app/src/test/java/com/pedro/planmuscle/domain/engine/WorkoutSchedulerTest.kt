@@ -8,18 +8,29 @@ import org.junit.Test
 class WorkoutSchedulerTest {
 
     @Test
-    fun `protocol week calculation returns correct week number`() {
+    fun `protocol week calculation returns correct week number capped at 8`() {
         val startDay = 20000L
         val week1Day = startDay + 3L
         val week2Day = startDay + 8L
+        val week10Day = startDay + 70L // 10 weeks
 
         assertEquals(1, WorkoutScheduler.getProtocolWeek(startDay, week1Day))
         assertEquals(2, WorkoutScheduler.getProtocolWeek(startDay, week2Day))
+        assertEquals(8, WorkoutScheduler.getProtocolWeek(startDay, week10Day))
+    }
+
+    @Test
+    fun `isProgramCompleted returns true after 56 days`() {
+        val startDay = 20000L
+        val day55 = startDay + 55L
+        val day56 = startDay + 56L
+
+        assertFalse(WorkoutScheduler.isProgramCompleted(startDay, day55))
+        assertTrue(WorkoutScheduler.isProgramCompleted(startDay, day56))
     }
 
     @Test
     fun `isTrainingDay returns true for Monday Wednesday Friday`() {
-        // Epoch day 20001 = Monday (2024-10-07)
         val mondayEpochDay = 20003L // Monday
         val tuesdayEpochDay = 20004L // Tuesday
 

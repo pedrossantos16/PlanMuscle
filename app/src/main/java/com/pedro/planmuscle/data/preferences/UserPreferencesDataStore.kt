@@ -6,6 +6,7 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.pedro.planmuscle.ui.theme.AppThemeOption
@@ -20,7 +21,11 @@ data class UserPreferences(
     val soundEnabled: Boolean = true,
     val vibrationEnabled: Boolean = true,
     val defaultRestSeconds: Int = 90,
-    val notificationsEnabled: Boolean = false
+    val notificationsEnabled: Boolean = false,
+    val activeSessionIdTimer: Long = 0L,
+    val restEndsAtEpochMillis: Long = 0L,
+    val pausedRemainingSeconds: Int = 0,
+    val isTimerRunning: Boolean = false
 )
 
 class UserPreferencesDataStore(private val context: Context) {
@@ -32,6 +37,10 @@ class UserPreferencesDataStore(private val context: Context) {
         val VIBRATION_ENABLED = booleanPreferencesKey("vibration_enabled")
         val DEFAULT_REST_SECONDS = intPreferencesKey("default_rest_seconds")
         val NOTIFICATIONS_ENABLED = booleanPreferencesKey("notifications_enabled")
+        val ACTIVE_SESSION_ID_TIMER = longPreferencesKey("active_session_id_timer")
+        val REST_ENDS_AT = longPreferencesKey("rest_ends_at")
+        val PAUSED_REMAINING_SECONDS = intPreferencesKey("paused_remaining_seconds")
+        val IS_TIMER_RUNNING = booleanPreferencesKey("is_timer_running")
     }
 
     val userPreferencesFlow: Flow<UserPreferences> = context.dataStore.data.map { preferences ->
@@ -48,7 +57,11 @@ class UserPreferencesDataStore(private val context: Context) {
             soundEnabled = preferences[PreferenceKeys.SOUND_ENABLED] ?: true,
             vibrationEnabled = preferences[PreferenceKeys.VIBRATION_ENABLED] ?: true,
             defaultRestSeconds = preferences[PreferenceKeys.DEFAULT_REST_SECONDS] ?: 90,
-            notificationsEnabled = preferences[PreferenceKeys.NOTIFICATIONS_ENABLED] ?: false
+            notificationsEnabled = preferences[PreferenceKeys.NOTIFICATIONS_ENABLED] ?: false,
+            activeSessionIdTimer = preferences[PreferenceKeys.ACTIVE_SESSION_ID_TIMER] ?: 0L,
+            restEndsAtEpochMillis = preferences[PreferenceKeys.REST_ENDS_AT] ?: 0L,
+            pausedRemainingSeconds = preferences[PreferenceKeys.PAUSED_REMAINING_SECONDS] ?: 0,
+            isTimerRunning = preferences[PreferenceKeys.IS_TIMER_RUNNING] ?: false
         )
     }
 
@@ -79,6 +92,32 @@ class UserPreferencesDataStore(private val context: Context) {
     suspend fun setNotificationsEnabled(enabled: Boolean) {
         context.dataStore.edit { preferences ->
             preferences[PreferenceKeys.NOTIFICATIONS_ENABLED] = enabled
+        }
+    }
+
+    suspend fun saveRestTimer(sessionId: Long, restEndsAtEpochMillis: Long, running: Boolean) {
+        context.dataStore.edit { preferences ->
+            preferences[PreferenceKeys.ACTIVE_SESSION_ID_TIMER] = sessionId
+            preferences[PreferenceKeys.REST_ENDS_AT] = restEndsAtEpochMillis
+            preferences[PreferenceKeys.IS_TIMER_RUNNING] = running
+            preferences[PreferenceKeys.PAUSED_REMAINING_SECONDS] = 0
+        }
+    }
+
+    suspend fun pauseRestTimer(sessionId: Long, remainingSeconds: Int) {
+        context.dataStore.edit { preferences ->
+            preferences[PreferenceKeys.ACTIVE_SESSION_ID_TIMER] = sessionId
+            preferences[PreferenceKeys.IS_TIMER_RUNNING] = false
+            preferences[PreferenceKeys.PAUSED_REMAINING_SECONDS] = remainingSeconds
+        }
+    }
+
+    suspend fun clearRestTimer() {
+        context.dataStore.edit { preferences ->
+            preferences[PreferenceKeys.ACTIVE_SESSION_ID_TIMER] = 0L
+            preferences[PreferenceKeys.REST_ENDS_AT] = 0L
+            preferences[PreferenceKeys.IS_TIMER_RUNNING] = false
+            preferences[PreferenceKeys.PAUSED_REMAINING_SECONDS] = 0
         }
     }
 }

@@ -55,7 +55,7 @@ interface PlanMuscleRepository {
     // Bi-weekly Reviews
     fun getPendingReview(programId: Long): Flow<BiweeklyReviewEntity?>
     suspend fun generateBiweeklyReviewIfDue(programId: Long): BiweeklyReviewEntity?
-    suspend fun acceptReviewAdjustment(reviewId: Long)
+    suspend fun acceptReviewAndApplyNutritionAdjustment(reviewId: Long)
     suspend fun rejectReview(reviewId: Long)
 
     // Custom Exercises & Templates

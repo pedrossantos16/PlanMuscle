@@ -235,6 +235,9 @@ interface SupplementIntakeDao {
 
 @Dao
 interface BiweeklyReviewDao {
+    @Query("SELECT * FROM biweekly_reviews WHERE id = :id")
+    suspend fun getReviewByIdOneShot(id: Long): BiweeklyReviewEntity?
+
     @Query("SELECT * FROM biweekly_reviews WHERE trainingProgramId = :programId ORDER BY periodEndEpochDay DESC")
     fun getReviewsForProgram(programId: Long): Flow<List<BiweeklyReviewEntity>>
 

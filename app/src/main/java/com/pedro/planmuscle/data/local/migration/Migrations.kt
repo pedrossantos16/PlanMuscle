@@ -349,7 +349,57 @@ val MIGRATION_1_2 = object : Migration(1, 2) {
             """.trimIndent()
         )
 
-        // 5. Drop old tables and rename v2 tables
+        // 5. Migrate V1 exercise_set_logs -> session_exercise_prescriptions and exercise_set_logs_v2
+        db.execSQL(
+            """
+            INSERT OR IGNORE INTO `session_exercise_prescriptions` (
+                `sessionId`, `exerciseId`, `exerciseNameSnapshot`, `orderIndex`,
+                `prescribedWorkSets`, `minReps`, `maxReps`, `targetRirMin`, `targetRirMax`,
+                `restSeconds`, `warmupGuidanceSnapshot`, `supersetGroupId`
+            )
+            SELECT
+                l.`sessionId`,
+                l.`exerciseId`,
+                l.`exerciseName`,
+                ROW_NUMBER() OVER (PARTITION BY l.`sessionId` ORDER BY MIN(l.`id`)),
+                MAX(1, COUNT(CASE WHEN l.`setType` = 'WORK' THEN 1 END)),
+                8,
+                12,
+                CASE WHEN COALESCE((SELECT s.`weekNumber` FROM `workout_sessions` s WHERE s.`id` = l.`sessionId`), 1) <= 2 THEN 3 ELSE 1 END,
+                CASE WHEN COALESCE((SELECT s.`weekNumber` FROM `workout_sessions` s WHERE s.`id` = l.`sessionId`), 1) <= 2 THEN 3 ELSE 2 END,
+                120,
+                'Migrado da versão 1 — prescrição original não registrada.',
+                NULL
+            FROM `exercise_set_logs` l
+            GROUP BY l.`sessionId`, l.`exerciseId`
+            """.trimIndent()
+        )
+
+        db.execSQL(
+            """
+            INSERT OR IGNORE INTO `exercise_set_logs_v2` (
+                `id`, `sessionId`, `sessionExercisePrescriptionId`, `setIndex`, `setType`,
+                `weightKg`, `reps`, `rir`, `techniqueOk`, `completedAtEpochMillis`, `notes`
+            )
+            SELECT
+                l.`id`,
+                l.`sessionId`,
+                p.`id`,
+                l.`setNumber`,
+                l.`setType`,
+                l.`weightKg`,
+                l.`reps`,
+                l.`rir`,
+                1,
+                COALESCE((SELECT s.`startedAtMillis` FROM `workout_sessions` s WHERE s.`id` = l.`sessionId`), CAST(strftime('%s', 'now') * 1000 AS INTEGER)),
+                'Migrado da V1'
+            FROM `exercise_set_logs` l
+            INNER JOIN `session_exercise_prescriptions` p
+                ON p.`sessionId` = l.`sessionId` AND p.`exerciseId` = l.`exerciseId`
+            """.trimIndent()
+        )
+
+        // 6. Drop old tables and rename v2 tables
         db.execSQL("DROP TABLE IF EXISTS `protocols`")
         db.execSQL("DROP TABLE IF EXISTS `daily_checkins`")
         db.execSQL("DROP TABLE IF EXISTS `body_measurements`")

@@ -77,7 +77,7 @@ class MainActivity : ComponentActivity() {
                     MainAppScreen(
                         repository = repository,
                         userPrefs = userPrefs,
-                        onThemeChanged = { newTheme ->
+                        onThemeChanged = { _ ->
                             // Theme changes via DataStore
                         }
                     )
@@ -157,11 +157,13 @@ fun MainAppScreen(
                 arguments = listOf(navArgument("sessionId") { type = NavType.LongType })
             ) { backStackEntry ->
                 val sessionId = backStackEntry.arguments?.getLong("sessionId") ?: 1L
+                val context = androidx.compose.ui.platform.LocalContext.current
+                val prefsDataStore = (context.applicationContext as PlanMuscleApplication).appContainer.userPreferencesDataStore
                 val workoutViewModel: WorkoutViewModel = viewModel(
                     factory = object : ViewModelProvider.Factory {
                         @Suppress("UNCHECKED_CAST")
                         override fun <T : ViewModel> create(modelClass: Class<T>): T {
-                            return WorkoutViewModel(repository, sessionId) as T
+                            return WorkoutViewModel(repository, prefsDataStore, sessionId) as T
                         }
                     }
                 )

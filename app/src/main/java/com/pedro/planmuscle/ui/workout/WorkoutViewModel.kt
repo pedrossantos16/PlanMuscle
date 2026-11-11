@@ -5,9 +5,9 @@ import androidx.lifecycle.viewModelScope
 import com.pedro.planmuscle.data.local.entity.ExerciseSetLogEntity
 import com.pedro.planmuscle.data.local.entity.SessionExercisePrescriptionEntity
 import com.pedro.planmuscle.data.local.entity.WorkoutSessionEntity
+import com.pedro.planmuscle.data.preferences.UserPreferencesDataStore
 import com.pedro.planmuscle.domain.engine.ProgressionDecision
 import com.pedro.planmuscle.domain.engine.ProgressionEngine
-import com.pedro.planmuscle.domain.engine.TrainingPhaseEngine
 import com.pedro.planmuscle.domain.repository.PlanMuscleRepository
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -36,6 +37,7 @@ data class WorkoutSessionUiState(
 
 class WorkoutViewModel(
     private val repository: PlanMuscleRepository,
+    private val prefsDataStore: UserPreferencesDataStore,
     private val sessionId: Long
 ) : ViewModel() {
 
@@ -46,6 +48,23 @@ class WorkoutViewModel(
 
     init {
         loadSessionData()
+        restoreRestTimerState()
+    }
+
+    private fun restoreRestTimerState() {
+        viewModelScope.launch {
+            val prefs = prefsDataStore.userPreferencesFlow.firstOrNull() ?: return@launch
+            if (prefs.activeSessionIdTimer == sessionId) {
+                if (prefs.isTimerRunning && prefs.restEndsAtEpochMillis > System.currentTimeMillis()) {
+                    val remainingSecs = ((prefs.restEndsAtEpochMillis - System.currentTimeMillis()) / 1000L).toInt()
+                    startRestTimer(remainingSecs)
+                } else if (!prefs.isTimerRunning && prefs.pausedRemainingSeconds > 0) {
+                    _uiState.update {
+                        it.copy(timerSecondsRemaining = prefs.pausedRemainingSeconds, isTimerRunning = false)
+                    }
+                }
+            }
+        }
     }
 
     private fun loadSessionData() {
@@ -71,10 +90,13 @@ class WorkoutViewModel(
                     val uiPrescriptions = prescriptions.map { prescription ->
                         val logsForPrescription = allLogs.filter { it.sessionExercisePrescriptionId == prescription.id }
                         val lastCompleted = repository.getLastCompletedSetLogsForExercise(prescription.exerciseId)
+                        val exEntity = repository.getAllExercises().firstOrNull()?.firstOrNull { it.id == prescription.exerciseId }
+                        val loadIncrement = exEntity?.defaultLoadIncrementKg ?: 2.0f
+
                         val decision = ProgressionEngine.evaluateProgression(
                             prescription = prescription,
                             lastCompletedWorkSetLogs = lastCompleted,
-                            loadIncrementKg = 2.0f
+                            loadIncrementKg = loadIncrement
                         )
 
                         ExercisePrescriptionUiState(
@@ -140,6 +162,10 @@ class WorkoutViewModel(
             )
         }
 
+        viewModelScope.launch {
+            prefsDataStore.saveRestTimer(sessionId, targetEnd, true)
+        }
+
         timerJob = viewModelScope.launch {
             while (true) {
                 val remainingMillis = targetEnd - System.currentTimeMillis()
@@ -148,6 +174,7 @@ class WorkoutViewModel(
                     _uiState.update {
                         it.copy(timerSecondsRemaining = 0, isTimerRunning = false)
                     }
+                    prefsDataStore.clearRestTimer()
                     break
                 }
                 _uiState.update { it.copy(timerSecondsRemaining = remainingSecs, isTimerRunning = true) }
@@ -158,11 +185,16 @@ class WorkoutViewModel(
 
     fun pauseRestTimer() {
         timerJob?.cancel()
+        val remaining = _uiState.value.timerSecondsRemaining
         _uiState.update { it.copy(isTimerRunning = false) }
+        viewModelScope.launch {
+            prefsDataStore.pauseRestTimer(sessionId, remaining)
+        }
     }
 
     fun finishWorkout(notes: String = "") {
         viewModelScope.launch {
+            prefsDataStore.clearRestTimer()
             repository.finishWorkoutSession(sessionId, notes)
             _uiState.update { it.copy(isCompleted = true) }
         }
@@ -170,6 +202,7 @@ class WorkoutViewModel(
 
     fun abandonWorkout() {
         viewModelScope.launch {
+            prefsDataStore.clearRestTimer()
             repository.abandonWorkoutSession(sessionId)
             _uiState.update { it.copy(isCompleted = true) }
         }
