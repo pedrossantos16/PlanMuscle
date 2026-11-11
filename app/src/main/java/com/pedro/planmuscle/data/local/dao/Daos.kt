@@ -54,6 +54,9 @@ interface WorkoutTemplateDao {
     @Query("SELECT * FROM workout_templates WHERE trainingProgramId = :programId AND active = 1")
     fun getTemplatesForProgram(programId: Long): Flow<List<WorkoutTemplateEntity>>
 
+    @Query("SELECT * FROM workout_templates WHERE trainingProgramId = :programId AND active = 1")
+    suspend fun getTemplatesForProgramOneShot(programId: Long): List<WorkoutTemplateEntity>
+
     @Query("SELECT * FROM workout_template_exercises WHERE workoutTemplateId = :templateId ORDER BY orderIndex ASC")
     fun getTemplateExercises(templateId: Long): Flow<List<WorkoutTemplateExerciseEntity>>
 
@@ -65,6 +68,13 @@ interface WorkoutTemplateDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertTemplateExercises(exercises: List<WorkoutTemplateExerciseEntity>)
+
+    @Query("""
+        UPDATE workout_template_exercises 
+        SET prescribedSets = :workSets, minReps = :minReps, maxReps = :maxReps, restSeconds = :restSeconds, warmupStrategy = :warmupGuidance 
+        WHERE exerciseId = :exerciseId AND workoutTemplateId IN (SELECT id FROM workout_templates WHERE trainingProgramId = :programId)
+    """)
+    suspend fun updateTemplateExercise(programId: Long, exerciseId: String, workSets: Int, minReps: Int, maxReps: Int, restSeconds: Int, warmupGuidance: String)
 }
 
 @Dao
@@ -99,6 +109,9 @@ interface WorkoutSessionDao {
     @Query("SELECT * FROM workout_sessions WHERE trainingProgramId = :programId AND status = 'COMPLETED' ORDER BY startedAtEpochMillis DESC")
     suspend fun getCompletedSessionsOneShot(programId: Long): List<WorkoutSessionEntity>
 
+    @Query("SELECT * FROM workout_sessions WHERE status = 'COMPLETED' ORDER BY startedAtEpochMillis DESC")
+    fun getAllCompletedSessions(): Flow<List<WorkoutSessionEntity>>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertSession(session: WorkoutSessionEntity): Long
 
@@ -126,7 +139,19 @@ interface WorkoutSessionDao {
     @Query("SELECT * FROM exercise_set_logs WHERE sessionId = :sessionId ORDER BY setIndex ASC")
     suspend fun getSetLogsForSessionOneShot(sessionId: Long): List<ExerciseSetLogEntity>
 
-    @Query("SELECT l.* FROM exercise_set_logs l INNER JOIN workout_sessions s ON l.sessionId = s.id INNER JOIN session_exercise_prescriptions p ON l.sessionExercisePrescriptionId = p.id WHERE p.exerciseId = :exerciseId AND s.status = 'COMPLETED' AND l.setType = 'WORK' ORDER BY s.startedAtEpochMillis DESC, l.setIndex ASC LIMIT 20")
+    @Query("""
+        SELECT l.* FROM exercise_set_logs l 
+        INNER JOIN session_exercise_prescriptions p ON l.sessionExercisePrescriptionId = p.id 
+        WHERE p.exerciseId = :exerciseId 
+          AND l.setType = 'WORK' 
+          AND l.sessionId = (
+              SELECT s.id FROM workout_sessions s 
+              INNER JOIN session_exercise_prescriptions p2 ON p2.sessionId = s.id 
+              WHERE s.status = 'COMPLETED' AND p2.exerciseId = :exerciseId 
+              ORDER BY s.startedAtEpochMillis DESC LIMIT 1
+          ) 
+        ORDER BY l.setIndex ASC
+    """)
     suspend fun getLastCompletedSetLogsForExercise(exerciseId: String): List<ExerciseSetLogEntity>
 }
 
@@ -143,6 +168,9 @@ interface DailyCheckInDao {
 
     @Query("SELECT * FROM daily_checkins ORDER BY dateEpochDay DESC")
     fun getAllCheckIns(): Flow<List<DailyCheckInEntity>>
+
+    @Query("SELECT * FROM daily_checkins ORDER BY dateEpochDay DESC")
+    suspend fun getAllCheckInsOneShot(): List<DailyCheckInEntity>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertOrUpdateCheckIn(checkIn: DailyCheckInEntity)
@@ -171,6 +199,9 @@ interface WaterEntryDao {
     @Query("SELECT SUM(amountMl) FROM water_entries WHERE dateEpochDay = :dateEpochDay")
     fun getTotalWaterForDate(dateEpochDay: Long): Flow<Int?>
 
+    @Query("SELECT * FROM water_entries ORDER BY timestampEpochMillis DESC")
+    suspend fun getAllWaterEntriesOneShot(): List<WaterEntryEntity>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertWaterEntry(entry: WaterEntryEntity)
 
@@ -183,6 +214,9 @@ interface MealCheckDao {
     @Query("SELECT * FROM meal_checks WHERE dateEpochDay = :dateEpochDay")
     fun getMealChecksForDate(dateEpochDay: Long): Flow<List<MealCheckEntity>>
 
+    @Query("SELECT * FROM meal_checks ORDER BY dateEpochDay DESC")
+    suspend fun getAllMealChecksOneShot(): List<MealCheckEntity>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertOrUpdateMealCheck(check: MealCheckEntity)
 }
@@ -192,12 +226,18 @@ interface SupplementIntakeDao {
     @Query("SELECT * FROM supplement_intakes WHERE dateEpochDay = :dateEpochDay")
     fun getSupplementIntakesForDate(dateEpochDay: Long): Flow<List<SupplementIntakeEntity>>
 
+    @Query("SELECT * FROM supplement_intakes ORDER BY dateEpochDay DESC")
+    suspend fun getAllSupplementIntakesOneShot(): List<SupplementIntakeEntity>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertSupplementIntake(intake: SupplementIntakeEntity)
 }
 
 @Dao
 interface BiweeklyReviewDao {
+    @Query("SELECT * FROM biweekly_reviews WHERE id = :id")
+    suspend fun getReviewByIdOneShot(id: Long): BiweeklyReviewEntity?
+
     @Query("SELECT * FROM biweekly_reviews WHERE trainingProgramId = :programId ORDER BY periodEndEpochDay DESC")
     fun getReviewsForProgram(programId: Long): Flow<List<BiweeklyReviewEntity>>
 

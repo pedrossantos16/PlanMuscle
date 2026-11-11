@@ -19,17 +19,21 @@ object HydrationEngine {
     )
 
     fun getInterpolatedExpectedVolume(hour: Int, minute: Int, dailyTargetMl: Int): Int {
-        val totalMinutes = hour * 60 + minute
-        val ratio = when {
-            totalMinutes <= (6 * 60 + 45) -> 0.0f
-            totalMinutes >= (22 * 60 + 5) -> 1.0f
-            else -> {
-                val dayStart = 6 * 60 + 45
-                val dayEnd = 22 * 60 + 5
-                ((totalMinutes - dayStart).toFloat() / (dayEnd - dayStart).toFloat()).coerceIn(0.0f, 1.0f)
-            }
+        val t = hour * 60 + minute
+        val scale = dailyTargetMl / 2600.0f
+
+        val rawExpected = when {
+            t <= 405 -> 0.0f // < 06:45
+            t <= 540 -> 0.0f + 400.0f * ((t - 405).toFloat() / 135.0f) // 06:45 - 09:00
+            t <= 735 -> 400.0f + 400.0f * ((t - 540).toFloat() / 195.0f) // 09:00 - 12:15
+            t <= 930 -> 800.0f + 400.0f * ((t - 735).toFloat() / 195.0f) // 12:15 - 15:30
+            t <= 1095 -> 1200.0f + 500.0f * ((t - 930).toFloat() / 165.0f) // 15:30 - 18:15
+            t <= 1325 -> 1700.0f + 600.0f * ((t - 1095).toFloat() / 230.0f) // 18:15 - 22:05
+            t <= 1380 -> 2300.0f + 300.0f * ((t - 1325).toFloat() / 55.0f) // 22:05 - 23:00
+            else -> 2600.0f
         }
-        return (dailyTargetMl * ratio).toInt()
+
+        return (rawExpected * scale).toInt()
     }
 
     fun getHydrationStatusMessage(currentWaterMl: Int, hour: Int, minute: Int, dailyTargetMl: Int): String {

@@ -1,0 +1,137 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 1,
+    "identityHash": "v1_identity_hash_plan_muscle",
+    "entities": [
+      {
+        "tableName": "protocols",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `startDate` TEXT NOT NULL, `durationWeeks` INTEGER NOT NULL, `calorieTarget` INTEGER NOT NULL, `proteinTargetGrams` INTEGER NOT NULL, `carbTargetGrams` INTEGER NOT NULL, `fatTargetGrams` INTEGER NOT NULL, `waterTargetMl` INTEGER NOT NULL, `isActive` INTEGER NOT NULL)",
+        "fields": [
+          { "fieldPath": "id", "columnName": "id", "affinity": "INTEGER", "notNull": true },
+          { "fieldPath": "startDate", "columnName": "startDate", "affinity": "TEXT", "notNull": true },
+          { "fieldPath": "durationWeeks", "columnName": "durationWeeks", "affinity": "INTEGER", "notNull": true },
+          { "fieldPath": "calorieTarget", "columnName": "calorieTarget", "affinity": "INTEGER", "notNull": true },
+          { "fieldPath": "proteinTargetGrams", "columnName": "proteinTargetGrams", "affinity": "INTEGER", "notNull": true },
+          { "fieldPath": "carbTargetGrams", "columnName": "carbTargetGrams", "affinity": "INTEGER", "notNull": true },
+          { "fieldPath": "fatTargetGrams", "columnName": "fatTargetGrams", "affinity": "INTEGER", "notNull": true },
+          { "fieldPath": "waterTargetMl", "columnName": "waterTargetMl", "affinity": "INTEGER", "notNull": true },
+          { "fieldPath": "isActive", "columnName": "isActive", "affinity": "INTEGER", "notNull": true }
+        ],
+        "primaryKey": {
+          "columnNames": ["id"],
+          "autoGenerate": true
+        }
+      },
+      {
+        "tableName": "daily_checkins",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`date` TEXT NOT NULL, `weightKg` REAL, `readinessLevel` INTEGER, `sleepHours` REAL, `sleepQuality` INTEGER, `notes` TEXT NOT NULL, PRIMARY KEY(`date`))",
+        "fields": [
+          { "fieldPath": "date", "columnName": "date", "affinity": "TEXT", "notNull": true },
+          { "fieldPath": "weightKg", "columnName": "weightKg", "affinity": "REAL", "notNull": false },
+          { "fieldPath": "readinessLevel", "columnName": "readinessLevel", "affinity": "INTEGER", "notNull": false },
+          { "fieldPath": "sleepHours", "columnName": "sleepHours", "affinity": "REAL", "notNull": false },
+          { "fieldPath": "sleepQuality", "columnName": "sleepQuality", "affinity": "INTEGER", "notNull": false },
+          { "fieldPath": "notes", "columnName": "notes", "affinity": "TEXT", "notNull": true }
+        ],
+        "primaryKey": {
+          "columnNames": ["date"],
+          "autoGenerate": false
+        }
+      },
+      {
+        "tableName": "body_measurements",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`date` TEXT NOT NULL, `waistCm` REAL, `armCm` REAL, `thighCm` REAL, `chestCm` REAL, PRIMARY KEY(`date`))",
+        "fields": [
+          { "fieldPath": "date", "columnName": "date", "affinity": "TEXT", "notNull": true },
+          { "fieldPath": "waistCm", "columnName": "waistCm", "affinity": "REAL", "notNull": false },
+          { "fieldPath": "armCm", "columnName": "armCm", "affinity": "REAL", "notNull": false },
+          { "fieldPath": "thighCm", "columnName": "thighCm", "affinity": "REAL", "notNull": false },
+          { "fieldPath": "chestCm", "columnName": "chestCm", "affinity": "REAL", "notNull": false }
+        ],
+        "primaryKey": {
+          "columnNames": ["date"],
+          "autoGenerate": false
+        }
+      },
+      {
+        "tableName": "water_entries",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `date` TEXT NOT NULL, `timestamp` INTEGER NOT NULL, `amountMl` INTEGER NOT NULL)",
+        "fields": [
+          { "fieldPath": "id", "columnName": "id", "affinity": "INTEGER", "notNull": true },
+          { "fieldPath": "date", "columnName": "date", "affinity": "TEXT", "notNull": true },
+          { "fieldPath": "timestamp", "columnName": "timestamp", "affinity": "INTEGER", "notNull": true },
+          { "fieldPath": "amountMl", "columnName": "amountMl", "affinity": "INTEGER", "notNull": true }
+        ],
+        "primaryKey": {
+          "columnNames": ["id"],
+          "autoGenerate": true
+        }
+      },
+      {
+        "tableName": "workout_sessions",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `date` TEXT NOT NULL, `weekNumber` INTEGER NOT NULL, `workoutType` TEXT NOT NULL, `startedAtMillis` INTEGER NOT NULL, `finishedAtMillis` INTEGER, `status` TEXT NOT NULL)",
+        "fields": [
+          { "fieldPath": "id", "columnName": "id", "affinity": "INTEGER", "notNull": true },
+          { "fieldPath": "date", "columnName": "date", "affinity": "TEXT", "notNull": true },
+          { "fieldPath": "weekNumber", "columnName": "weekNumber", "affinity": "INTEGER", "notNull": true },
+          { "fieldPath": "workoutType", "columnName": "workoutType", "affinity": "TEXT", "notNull": true },
+          { "fieldPath": "startedAtMillis", "columnName": "startedAtMillis", "affinity": "INTEGER", "notNull": true },
+          { "fieldPath": "finishedAtMillis", "columnName": "finishedAtMillis", "affinity": "INTEGER", "notNull": false },
+          { "fieldPath": "status", "columnName": "status", "affinity": "TEXT", "notNull": true }
+        ],
+        "primaryKey": {
+          "columnNames": ["id"],
+          "autoGenerate": true
+        }
+      },
+      {
+        "tableName": "exercise_set_logs",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `sessionId` INTEGER NOT NULL, `exerciseId` TEXT NOT NULL, `exerciseName` TEXT NOT NULL, `setNumber` INTEGER NOT NULL, `setType` TEXT NOT NULL, `weightKg` REAL NOT NULL, `reps` INTEGER NOT NULL, `rir` INTEGER)",
+        "fields": [
+          { "fieldPath": "id", "columnName": "id", "affinity": "INTEGER", "notNull": true },
+          { "fieldPath": "sessionId", "columnName": "sessionId", "affinity": "INTEGER", "notNull": true },
+          { "fieldPath": "exerciseId", "columnName": "exerciseId", "affinity": "TEXT", "notNull": true },
+          { "fieldPath": "exerciseName", "columnName": "exerciseName", "affinity": "TEXT", "notNull": true },
+          { "fieldPath": "setNumber", "columnName": "setNumber", "affinity": "INTEGER", "notNull": true },
+          { "fieldPath": "setType", "columnName": "setType", "affinity": "TEXT", "notNull": true },
+          { "fieldPath": "weightKg", "columnName": "weightKg", "affinity": "REAL", "notNull": true },
+          { "fieldPath": "reps", "columnName": "reps", "affinity": "INTEGER", "notNull": true },
+          { "fieldPath": "rir", "columnName": "rir", "affinity": "INTEGER", "notNull": false }
+        ],
+        "primaryKey": {
+          "columnNames": ["id"],
+          "autoGenerate": true
+        }
+      },
+      {
+        "tableName": "meal_checks",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`date` TEXT NOT NULL, `mealId` TEXT NOT NULL, `completed` INTEGER NOT NULL, PRIMARY KEY(`date`, `mealId`))",
+        "fields": [
+          { "fieldPath": "date", "columnName": "date", "affinity": "TEXT", "notNull": true },
+          { "fieldPath": "mealId", "columnName": "mealId", "affinity": "TEXT", "notNull": true },
+          { "fieldPath": "completed", "columnName": "completed", "affinity": "INTEGER", "notNull": true }
+        ],
+        "primaryKey": {
+          "columnNames": ["date", "mealId"],
+          "autoGenerate": false
+        }
+      },
+      {
+        "tableName": "supplement_intakes",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `date` TEXT NOT NULL, `timestamp` INTEGER NOT NULL, `supplementId` TEXT NOT NULL, `amount` TEXT NOT NULL)",
+        "fields": [
+          { "fieldPath": "id", "columnName": "id", "affinity": "INTEGER", "notNull": true },
+          { "fieldPath": "date", "columnName": "date", "affinity": "TEXT", "notNull": true },
+          { "fieldPath": "timestamp", "columnName": "timestamp", "affinity": "INTEGER", "notNull": true },
+          { "fieldPath": "supplementId", "columnName": "supplementId", "affinity": "TEXT", "notNull": true },
+          { "fieldPath": "amount", "columnName": "amount", "affinity": "TEXT", "notNull": true }
+        ],
+        "primaryKey": {
+          "columnNames": ["id"],
+          "autoGenerate": true
+        }
+      }
+    ]
+  }
+}

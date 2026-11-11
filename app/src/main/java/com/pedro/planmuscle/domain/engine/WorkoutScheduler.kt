@@ -9,15 +9,21 @@ data class WorkoutScheduleStatus(
     val plannedWorkoutType: String, // "A" ou "B"
     val scheduleTitle: String,
     val scheduleSubtitle: String,
-    val timeWindowLabel: String
+    val timeWindowLabel: String,
+    val isProgramCompleted: Boolean = false
 )
 
 object WorkoutScheduler {
 
     fun getProtocolWeek(startDateEpochDay: Long, targetEpochDay: Long): Int {
-        val daysBetween = targetEpochDay - startDateEpochDay
+        val daysBetween = (targetEpochDay - startDateEpochDay).coerceAtLeast(0)
         val week = (daysBetween / 7).toInt() + 1
-        return week.coerceAtLeast(1)
+        return week.coerceIn(1, 8)
+    }
+
+    fun isProgramCompleted(startDateEpochDay: Long, targetEpochDay: Long): Boolean {
+        val daysBetween = targetEpochDay - startDateEpochDay
+        return daysBetween >= 56 // 8 semanas completadas
     }
 
     fun isTrainingDay(epochDay: Long): Boolean {
@@ -28,10 +34,6 @@ object WorkoutScheduler {
         return dayOfWeek == Calendar.MONDAY || dayOfWeek == Calendar.WEDNESDAY || dayOfWeek == Calendar.FRIDAY
     }
 
-    /**
-     * Calcula o tipo de treino ("A" ou "B") para o dia considerando a alternância estrita
-     * e o último treino concluído (sem quebrar a sequência se um treino for perdido).
-     */
     fun determineNextWorkoutType(lastCompletedWorkoutType: String?): String {
         return when (lastCompletedWorkoutType?.uppercase()) {
             "A" -> "B"
@@ -45,8 +47,21 @@ object WorkoutScheduler {
         targetEpochDay: Long,
         lastCompletedWorkoutType: String?
     ): WorkoutScheduleStatus {
+        val completed = isProgramCompleted(startDateEpochDay, targetEpochDay)
         val isWorkout = isTrainingDay(targetEpochDay)
         val nextType = determineNextWorkoutType(lastCompletedWorkoutType)
+
+        if (completed) {
+            return WorkoutScheduleStatus(
+                dateEpochDay = targetEpochDay,
+                isWorkoutDay = false,
+                plannedWorkoutType = nextType,
+                scheduleTitle = "Protocolo de 8 Semanas Concluído 🎉",
+                scheduleSubtitle = "Parabéns por completar seu protocolo de hipertrofia! Você pode iniciar um novo ciclo a qualquer momento.",
+                timeWindowLabel = "Ciclo Concluído",
+                isProgramCompleted = true
+            )
+        }
 
         return if (isWorkout) {
             WorkoutScheduleStatus(
@@ -58,7 +73,8 @@ object WorkoutScheduler {
                     "Foco: Supino reto, Agachamento, Puxada alta, Mesa flexora, Elevação lateral, Rosca direta"
                 else
                     "Foco: Leg press, Remada baixa, Supino inclinado, Stiff, Desenvolvimento, Rosca martelo + Tríceps",
-                timeWindowLabel = "17:30 – 18:15 na GrowFit Unidade 2"
+                timeWindowLabel = "17:30 – 18:15 na GrowFit Unidade 2",
+                isProgramCompleted = false
             )
         } else {
             WorkoutScheduleStatus(
@@ -67,7 +83,8 @@ object WorkoutScheduler {
                 plannedWorkoutType = nextType,
                 scheduleTitle = "Dia de Recuperação e Descanso",
                 scheduleSubtitle = "Próximo treino planejado: Treino $nextType",
-                timeWindowLabel = "Recuperação muscular ativa • Próxima sessão na GrowFit"
+                timeWindowLabel = "Recuperação muscular ativa • Próxima sessão na GrowFit",
+                isProgramCompleted = false
             )
         }
     }

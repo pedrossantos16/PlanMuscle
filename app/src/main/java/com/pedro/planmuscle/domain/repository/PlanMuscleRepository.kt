@@ -17,6 +17,7 @@ interface PlanMuscleRepository {
     suspend fun updateNutritionTarget(calories: Int, protein: Int, carbs: Int, fats: Int, waterMl: Int, reason: String)
 
     // Workouts & Session Creation
+    fun getAllCompletedSessions(): Flow<List<WorkoutSessionEntity>>
     suspend fun startOrResumeWorkoutSession(targetDateEpochDay: Long = getTodayEpochDay()): Long
     fun getWorkoutSessionById(sessionId: Long): Flow<WorkoutSessionEntity?>
     suspend fun finishWorkoutSession(sessionId: Long, notes: String = "")
@@ -54,7 +55,7 @@ interface PlanMuscleRepository {
     // Bi-weekly Reviews
     fun getPendingReview(programId: Long): Flow<BiweeklyReviewEntity?>
     suspend fun generateBiweeklyReviewIfDue(programId: Long): BiweeklyReviewEntity?
-    suspend fun acceptReviewAdjustment(reviewId: Long)
+    suspend fun acceptReviewAndApplyNutritionAdjustment(reviewId: Long)
     suspend fun rejectReview(reviewId: Long)
 
     // Custom Exercises & Templates

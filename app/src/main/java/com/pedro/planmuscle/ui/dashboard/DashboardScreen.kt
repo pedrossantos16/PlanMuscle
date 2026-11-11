@@ -18,13 +18,15 @@ import androidx.compose.ui.unit.dp
 import com.pedro.planmuscle.data.local.entity.NutritionTargetEntity
 import kotlinx.coroutines.launch
 
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DashboardScreen(
     viewModel: DashboardViewModel,
     onStartWorkout: (sessionId: Long) -> Unit
 ) {
-    val state by viewModel.uiState.collectAsState()
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
 
     Scaffold(

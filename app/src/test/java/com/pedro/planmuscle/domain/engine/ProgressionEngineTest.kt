@@ -28,16 +28,16 @@ class ProgressionEngineTest {
     }
 
     @Test
-    fun `when all sets hit max reps with good technique returns INCREASE_LOAD`() {
+    fun `when all sets hit max reps with custom increment 2 5kg returns 42 5kg`() {
         val logs = listOf(
             ExerciseSetLogEntity(sessionId = 10L, sessionExercisePrescriptionId = 1L, setIndex = 1, setType = "WORK", weightKg = 40f, reps = 10, rir = 1, techniqueOk = true),
             ExerciseSetLogEntity(sessionId = 10L, sessionExercisePrescriptionId = 1L, setIndex = 2, setType = "WORK", weightKg = 40f, reps = 10, rir = 1, techniqueOk = true),
             ExerciseSetLogEntity(sessionId = 10L, sessionExercisePrescriptionId = 1L, setIndex = 3, setType = "WORK", weightKg = 40f, reps = 10, rir = 2, techniqueOk = true)
         )
 
-        val decision = ProgressionEngine.evaluateProgression(dummyPrescription, logs, 2.0f)
+        val decision = ProgressionEngine.evaluateProgression(dummyPrescription, logs, 2.5f)
         assertEquals(ProgressionDecisionType.INCREASE_LOAD, decision.type)
-        assertEquals(42.0f, decision.suggestedWeightKg)
+        assertEquals(42.5f, decision.suggestedWeightKg!!, 0.01f)
     }
 
     @Test
@@ -50,7 +50,7 @@ class ProgressionEngineTest {
 
         val decision = ProgressionEngine.evaluateProgression(dummyPrescription, logs, 2.0f)
         assertEquals(ProgressionDecisionType.MAINTAIN_LOAD, decision.type)
-        assertEquals(40.0f, decision.suggestedWeightKg)
+        assertEquals(40.0f, decision.suggestedWeightKg!!, 0.01f)
     }
 
     @Test

@@ -22,13 +22,15 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.pedro.planmuscle.domain.engine.ExerciseDefinition
 
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
     viewModel: SettingsViewModel,
     onThemeChanged: (com.pedro.planmuscle.ui.theme.AppThemeOption) -> Unit
 ) {
-    val state by viewModel.uiState.collectAsState()
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
 
     var calInput by remember(state.activeProtocol) { mutableStateOf(state.activeProtocol?.calorieTarget?.toString() ?: "2550") }
     var proteinInput by remember(state.activeProtocol) { mutableStateOf(state.activeProtocol?.proteinTargetGrams?.toString() ?: "150") }

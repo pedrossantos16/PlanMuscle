@@ -18,10 +18,12 @@ import com.pedro.planmuscle.data.local.converter.DateUtils
 import com.pedro.planmuscle.data.local.entity.BiweeklyReviewEntity
 import com.pedro.planmuscle.data.local.entity.BodyMeasurementEntity
 
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HistoryScreen(viewModel: HistoryViewModel) {
-    val state by viewModel.uiState.collectAsState()
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
 
     Scaffold(
         topBar = {
