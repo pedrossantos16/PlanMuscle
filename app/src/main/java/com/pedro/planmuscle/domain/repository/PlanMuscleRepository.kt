@@ -17,6 +17,7 @@ interface PlanMuscleRepository {
     suspend fun updateNutritionTarget(calories: Int, protein: Int, carbs: Int, fats: Int, waterMl: Int, reason: String)
 
     // Workouts & Session Creation
+    fun getAllCompletedSessions(): Flow<List<WorkoutSessionEntity>>
     suspend fun startOrResumeWorkoutSession(targetDateEpochDay: Long = getTodayEpochDay()): Long
     fun getWorkoutSessionById(sessionId: Long): Flow<WorkoutSessionEntity?>
     suspend fun finishWorkoutSession(sessionId: Long, notes: String = "")

@@ -1,5 +1,6 @@
 package com.pedro.planmuscle.data.repository
 
+import androidx.room.withTransaction
 import com.pedro.planmuscle.data.local.PlanMuscleDatabase
 import com.pedro.planmuscle.data.local.converter.DateUtils
 import com.pedro.planmuscle.data.local.entity.*
@@ -39,76 +40,82 @@ class PlanMuscleRepositoryImpl(private val database: PlanMuscleDatabase) : PlanM
     override fun getActiveProgram(): Flow<TrainingProgramEntity?> = programDao.getActiveProgram()
 
     override suspend fun ensureActiveProgramSeeded(startDateEpochDay: Long): Long {
-        val existing = programDao.getActiveProgramOneShot()
-        if (existing != null) return existing.id
+        return database.withTransaction {
+            val existing = programDao.getActiveProgramOneShot()
+            val programId = if (existing != null) {
+                existing.id
+            } else {
+                val program = TrainingProgramEntity(
+                    name = "Protocolo Pessoal 8 Semanas (GrowFit + SENAI)",
+                    startDateEpochDay = startDateEpochDay,
+                    durationWeeks = 8,
+                    status = "ACTIVE"
+                )
+                val newId = programDao.insertProgram(program)
 
-        // Transactional seed
-        val program = TrainingProgramEntity(
-            name = "Protocolo Pessoal 8 Semanas (GrowFit + SENAI)",
-            startDateEpochDay = startDateEpochDay,
-            durationWeeks = 8,
-            status = "ACTIVE"
-        )
-        val programId = programDao.insertProgram(program)
+                nutritionDao.insertTarget(
+                    NutritionTargetEntity(
+                        trainingProgramId = newId,
+                        validFromEpochDay = startDateEpochDay,
+                        calorieTarget = 2550,
+                        proteinTargetGrams = 150,
+                        carbTargetGrams = 330,
+                        fatTargetGrams = 70,
+                        waterTargetMl = 2600,
+                        adjustmentReason = "Metas iniciais do protocolo de 8 semanas"
+                    )
+                )
+                newId
+            }
 
-        // Seed Nutrition Target
-        nutritionDao.insertTarget(
-            NutritionTargetEntity(
-                trainingProgramId = programId,
-                validFromEpochDay = startDateEpochDay,
-                calorieTarget = 2550,
-                proteinTargetGrams = 150,
-                carbTargetGrams = 330,
-                fatTargetGrams = 70,
-                waterTargetMl = 2600,
-                adjustmentReason = "Metas iniciais do protocolo de 8 semanas"
-            )
-        )
+            // Ensure exercises exist
+            if (exerciseDao.getExerciseById("supino_reto") == null) {
+                exerciseDao.insertExercises(TrainingPhaseEngine.defaultExercises)
+            }
 
-        // Seed Exercises
-        exerciseDao.insertExercises(TrainingPhaseEngine.defaultExercises)
+            // Ensure templates exist for this program
+            val templates = templateDao.getTemplatesForProgramOneShot(programId)
+            if (templates.isEmpty()) {
+                val templateAId = templateDao.insertTemplate(
+                    WorkoutTemplateEntity(trainingProgramId = programId, workoutType = "A", title = TrainingPhaseEngine.WorkoutA.title)
+                )
+                val templateBId = templateDao.insertTemplate(
+                    WorkoutTemplateEntity(trainingProgramId = programId, workoutType = "B", title = TrainingPhaseEngine.WorkoutB.title)
+                )
 
-        // Seed Templates
-        val templateAId = templateDao.insertTemplate(
-            WorkoutTemplateEntity(trainingProgramId = programId, workoutType = "A", title = TrainingPhaseEngine.WorkoutA.title)
-        )
-        val templateBId = templateDao.insertTemplate(
-            WorkoutTemplateEntity(trainingProgramId = programId, workoutType = "B", title = TrainingPhaseEngine.WorkoutB.title)
-        )
+                val exA = TrainingPhaseEngine.WorkoutA.exercises.mapIndexed { idx, ex ->
+                    WorkoutTemplateExerciseEntity(
+                        workoutTemplateId = templateAId,
+                        exerciseId = ex.id,
+                        orderIndex = idx + 1,
+                        prescribedSets = ex.defaultWorkSets,
+                        minReps = ex.targetRepsMin,
+                        maxReps = ex.targetRepsMax,
+                        restSeconds = ex.restTimeSeconds,
+                        warmupStrategy = ex.warmupGuidance,
+                        supersetGroupId = if (ex.isSuperSet) "bi_set_bracos" else null
+                    )
+                }
+                templateDao.insertTemplateExercises(exA)
 
-        // Seed Template Exercises A
-        val exA = TrainingPhaseEngine.WorkoutA.exercises.mapIndexed { idx, ex ->
-            WorkoutTemplateExerciseEntity(
-                workoutTemplateId = templateAId,
-                exerciseId = ex.id,
-                orderIndex = idx + 1,
-                prescribedSets = ex.defaultWorkSets,
-                minReps = ex.targetRepsMin,
-                maxReps = ex.targetRepsMax,
-                restSeconds = ex.restTimeSeconds,
-                warmupStrategy = ex.warmupGuidance,
-                supersetGroupId = if (ex.isSuperSet) "bi_set_bracos" else null
-            )
+                val exB = TrainingPhaseEngine.WorkoutB.exercises.mapIndexed { idx, ex ->
+                    WorkoutTemplateExerciseEntity(
+                        workoutTemplateId = templateBId,
+                        exerciseId = ex.id,
+                        orderIndex = idx + 1,
+                        prescribedSets = ex.defaultWorkSets,
+                        minReps = ex.targetRepsMin,
+                        maxReps = ex.targetRepsMax,
+                        restSeconds = ex.restTimeSeconds,
+                        warmupStrategy = ex.warmupGuidance,
+                        supersetGroupId = if (ex.isSuperSet) "bi_set_bracos" else null
+                    )
+                }
+                templateDao.insertTemplateExercises(exB)
+            }
+
+            programId
         }
-        templateDao.insertTemplateExercises(exA)
-
-        // Seed Template Exercises B
-        val exB = TrainingPhaseEngine.WorkoutB.exercises.mapIndexed { idx, ex ->
-            WorkoutTemplateExerciseEntity(
-                workoutTemplateId = templateBId,
-                exerciseId = ex.id,
-                orderIndex = idx + 1,
-                prescribedSets = ex.defaultWorkSets,
-                minReps = ex.targetRepsMin,
-                maxReps = ex.targetRepsMax,
-                restSeconds = ex.restTimeSeconds,
-                warmupStrategy = ex.warmupGuidance,
-                supersetGroupId = if (ex.isSuperSet) "bi_set_bracos" else null
-            )
-        }
-        templateDao.insertTemplateExercises(exB)
-
-        return programId
     }
 
     override suspend fun startNewProgramCycle(): Long {
@@ -149,66 +156,71 @@ class PlanMuscleRepositoryImpl(private val database: PlanMuscleDatabase) : PlanM
     }
 
     override suspend fun startOrResumeWorkoutSession(targetDateEpochDay: Long): Long {
-        // 1. Check for IN_PROGRESS session
-        val inProgress = sessionDao.getInProgressSession()
-        if (inProgress != null) {
-            return inProgress.id
-        }
-
-        // 2. Ensure program exists
-        val programId = ensureActiveProgramSeeded(targetDateEpochDay)
-        val program = programDao.getActiveProgramOneShot() ?: return 0L
-
-        // 3. Determine protocol week & next workout type
-        val week = WorkoutScheduler.getProtocolWeek(program.startDateEpochDay, targetDateEpochDay)
-        val completed = sessionDao.getCompletedSessionsOneShot(programId)
-        val lastType = completed.firstOrNull()?.workoutType
-        val workoutType = WorkoutScheduler.determineNextWorkoutType(lastType)
-
-        // 4. Create Session Entity
-        val session = WorkoutSessionEntity(
-            trainingProgramId = programId,
-            workoutType = workoutType,
-            protocolWeek = week,
-            startedAtEpochMillis = System.currentTimeMillis(),
-            status = "IN_PROGRESS"
-        )
-        val sessionId = sessionDao.insertSession(session)
-
-        // 5. Generate Prescriptions Snapshot
-        val phaseInfo = TrainingPhaseEngine.getPhaseForWeek(week)
-        val templates = templateDao.getTemplatesForProgram(programId).firstOrNull() ?: emptyList()
-        val template = templates.firstOrNull { it.workoutType == workoutType }
-
-        if (template != null) {
-            val templateExercises = templateDao.getTemplateExercisesOneShot(template.id)
-            val prescriptions = templateExercises.map { ex ->
-                val exEntity = exerciseDao.getExerciseById(ex.exerciseId)
-                val sets = phaseInfo.workSetsOverride ?: ex.prescribedSets
-
-                SessionExercisePrescriptionEntity(
-                    sessionId = sessionId,
-                    exerciseId = ex.exerciseId,
-                    exerciseNameSnapshot = exEntity?.name ?: ex.exerciseId,
-                    orderIndex = ex.orderIndex,
-                    prescribedWorkSets = sets,
-                    minReps = ex.minReps,
-                    maxReps = ex.maxReps,
-                    targetRirMin = phaseInfo.targetRirMin,
-                    targetRirMax = phaseInfo.targetRirMax,
-                    restSeconds = ex.restSeconds,
-                    warmupGuidanceSnapshot = ex.warmupStrategy,
-                    supersetGroupId = ex.supersetGroupId
-                )
+        return database.withTransaction {
+            // 1. Check for IN_PROGRESS session
+            val inProgress = sessionDao.getInProgressSession()
+            if (inProgress != null) {
+                return@withTransaction inProgress.id
             }
-            sessionDao.insertPrescriptions(prescriptions)
-        }
 
-        return sessionId
+            // 2. Ensure program exists
+            val programId = ensureActiveProgramSeeded(targetDateEpochDay)
+            val program = programDao.getActiveProgramOneShot() ?: return@withTransaction 0L
+
+            // 3. Determine protocol week & next workout type
+            val week = WorkoutScheduler.getProtocolWeek(program.startDateEpochDay, targetDateEpochDay)
+            val completed = sessionDao.getCompletedSessionsOneShot(programId)
+            val lastType = completed.firstOrNull()?.workoutType
+            val workoutType = WorkoutScheduler.determineNextWorkoutType(lastType)
+
+            // 4. Create Session Entity
+            val session = WorkoutSessionEntity(
+                trainingProgramId = programId,
+                workoutType = workoutType,
+                protocolWeek = week,
+                startedAtEpochMillis = System.currentTimeMillis(),
+                status = "IN_PROGRESS"
+            )
+            val sessionId = sessionDao.insertSession(session)
+
+            // 5. Generate Prescriptions Snapshot
+            val phaseInfo = TrainingPhaseEngine.getPhaseForWeek(week)
+            val templates = templateDao.getTemplatesForProgramOneShot(programId)
+            val template = templates.firstOrNull { it.workoutType == workoutType }
+
+            if (template != null) {
+                val templateExercises = templateDao.getTemplateExercisesOneShot(template.id)
+                val prescriptions = templateExercises.map { ex ->
+                    val exEntity = exerciseDao.getExerciseById(ex.exerciseId)
+                    val sets = phaseInfo.workSetsOverride ?: ex.prescribedSets
+
+                    SessionExercisePrescriptionEntity(
+                        sessionId = sessionId,
+                        exerciseId = ex.exerciseId,
+                        exerciseNameSnapshot = exEntity?.name ?: ex.exerciseId,
+                        orderIndex = ex.orderIndex,
+                        prescribedWorkSets = sets,
+                        minReps = ex.minReps,
+                        maxReps = ex.maxReps,
+                        targetRirMin = phaseInfo.targetRirMin,
+                        targetRirMax = phaseInfo.targetRirMax,
+                        restSeconds = ex.restSeconds,
+                        warmupGuidanceSnapshot = ex.warmupStrategy,
+                        supersetGroupId = ex.supersetGroupId
+                    )
+                }
+                sessionDao.insertPrescriptions(prescriptions)
+            }
+
+            sessionId
+        }
     }
 
     override fun getWorkoutSessionById(sessionId: Long): Flow<WorkoutSessionEntity?> =
         sessionDao.getSessionById(sessionId)
+
+    override fun getAllCompletedSessions(): Flow<List<WorkoutSessionEntity>> =
+        sessionDao.getAllCompletedSessions()
 
     override suspend fun finishWorkoutSession(sessionId: Long, notes: String) {
         sessionDao.updateSessionStatus(sessionId, "COMPLETED", System.currentTimeMillis())
@@ -350,6 +362,9 @@ class PlanMuscleRepositoryImpl(private val database: PlanMuscleDatabase) : PlanM
         warmupGuidance: String,
         loadIncrementKg: Float
     ) {
+        val program = programDao.getActiveProgramOneShot()
+        val programId = program?.id ?: 1L
+
         val existingEx = exerciseDao.getExerciseById(exerciseId)
         val updatedEx = ExerciseEntity(
             id = exerciseId,
@@ -363,6 +378,17 @@ class PlanMuscleRepositoryImpl(private val database: PlanMuscleDatabase) : PlanM
             active = true
         )
         exerciseDao.insertExercises(listOf(updatedEx))
+
+        // Update in WorkoutTemplateExerciseEntity in Room DB!
+        templateDao.updateTemplateExercise(
+            programId = programId,
+            exerciseId = exerciseId,
+            workSets = workSets,
+            minReps = minReps,
+            maxReps = maxReps,
+            restSeconds = restSeconds,
+            warmupGuidance = warmupGuidance
+        )
 
         // Also update in memory engine
         TrainingPhaseEngine.updateExerciseDefinition(
@@ -379,18 +405,44 @@ class PlanMuscleRepositoryImpl(private val database: PlanMuscleDatabase) : PlanM
     }
 
     override suspend fun exportDataAsJson(): String {
-        return "{\"version\":2,\"exportedAt\":${System.currentTimeMillis()}}"
+        val checkIns = checkInDao.getAllCheckInsOneShot()
+        val measurements = measurementDao.getAllMeasurementsOneShot()
+        val water = waterDao.getAllWaterEntriesOneShot()
+        val meals = mealCheckDao.getAllMealChecksOneShot()
+        val supplements = supplementDao.getAllSupplementIntakesOneShot()
+
+        val json = StringBuilder("{")
+        json.append("\"version\":2,")
+        json.append("\"exportedAt\":${System.currentTimeMillis()},")
+        json.append("\"dailyCheckInsCount\":${checkIns.size},")
+        json.append("\"measurementsCount\":${measurements.size},")
+        json.append("\"waterEntriesCount\":${water.size},")
+        json.append("\"mealChecksCount\":${meals.size},")
+        json.append("\"supplementsCount\":${supplements.size}")
+        json.append("}")
+        return json.toString()
     }
 
     override suspend fun importDataFromJson(json: String): Boolean {
-        return json.contains("version")
+        return json.contains("\"version\":2")
     }
 
     override suspend fun exportWorkoutsAndWeightsCsv(): String {
-        return "Data,Peso,Sessao,Exercicio,Carga,Reps\n"
+        val sb = StringBuilder("Data,Sessao,Exercicio,Tipo,Serie,CargaKg,Reps,RIR\n")
+        val completed = sessionDao.getCompletedSessionsOneShot(1L)
+        completed.forEach { s ->
+            val logs = sessionDao.getSetLogsForSessionOneShot(s.id)
+            val dateStr = DateUtils.epochDayToDateString(s.startedAtEpochMillis / 86_400_000L)
+            logs.forEach { l ->
+                sb.append("$dateStr,Treino ${s.workoutType},${l.notes},${l.setType},${l.setIndex},${l.weightKg},${l.reps},${l.rir ?: "-"}\n")
+            }
+        }
+        return sb.toString()
     }
 
     override suspend fun clearAllData() {
-        // Safe clear
+        database.withTransaction {
+            database.clearAllTables()
+        }
     }
 }

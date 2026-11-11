@@ -15,10 +15,12 @@ import androidx.compose.ui.unit.dp
 import com.pedro.planmuscle.data.local.entity.BodyMeasurementEntity
 import com.pedro.planmuscle.data.local.entity.DailyCheckInEntity
 
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CheckInScreen(viewModel: CheckInViewModel) {
-    val state by viewModel.uiState.collectAsState()
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
     var selectedTab by remember { mutableIntStateOf(0) }
 
     Scaffold(

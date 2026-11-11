@@ -297,7 +297,59 @@ val MIGRATION_1_2 = object : Migration(1, 2) {
             """.trimIndent()
         )
 
-        // 3. Drop old tables and rename v2 tables
+        // 3. Migrate daily_checkins, body_measurements, water_entries, meal_checks, supplement_intakes
+        db.execSQL(
+            """
+            INSERT OR IGNORE INTO `daily_checkins_v2` (`dateEpochDay`, `weightKg`, `readinessLevel`, `sleepMinutes`, `sleepQuality`, `unusualPain`, `notes`)
+            SELECT CAST(strftime('%s', `date`) / 86400 AS INTEGER), `weightKg`, `readinessLevel`,
+                CAST(`sleepHours` * 60 AS INTEGER), `sleepQuality`, 0, COALESCE(`notes`, '')
+            FROM `daily_checkins`
+            """.trimIndent()
+        )
+
+        db.execSQL(
+            """
+            INSERT OR IGNORE INTO `body_measurements_v2` (`dateEpochDay`, `waistCm`, `armCm`, `thighCm`, `chestCm`, `measurementNotes`)
+            SELECT CAST(strftime('%s', `date`) / 86400 AS INTEGER), `waistCm`, `armCm`, `thighCm`, `chestCm`, ''
+            FROM `body_measurements`
+            """.trimIndent()
+        )
+
+        db.execSQL(
+            """
+            INSERT OR IGNORE INTO `water_entries_v2` (`id`, `dateEpochDay`, `timestampEpochMillis`, `amountMl`)
+            SELECT `id`, CAST(strftime('%s', `date`) / 86400 AS INTEGER), `timestamp`, `amountMl`
+            FROM `water_entries`
+            """.trimIndent()
+        )
+
+        db.execSQL(
+            """
+            INSERT OR IGNORE INTO `meal_checks_v2` (`dateEpochDay`, `mealId`, `status`, `notes`)
+            SELECT CAST(strftime('%s', `date`) / 86400 AS INTEGER), `mealId`,
+                CASE WHEN `completed` = 1 THEN 'COMPLETED_AS_PLANNED' ELSE 'PLANNED' END, ''
+            FROM `meal_checks`
+            """.trimIndent()
+        )
+
+        db.execSQL(
+            """
+            INSERT OR IGNORE INTO `supplement_intakes_v2` (`id`, `dateEpochDay`, `supplementId`, `timestampEpochMillis`, `amount`)
+            SELECT `id`, CAST(strftime('%s', `date`) / 86400 AS INTEGER), `supplementId`, `timestamp`, `amount`
+            FROM `supplement_intakes`
+            """.trimIndent()
+        )
+
+        // 4. Migrate workout_sessions
+        db.execSQL(
+            """
+            INSERT OR IGNORE INTO `workout_sessions_v2` (`id`, `trainingProgramId`, `plannedWorkoutId`, `workoutType`, `protocolWeek`, `startedAtEpochMillis`, `finishedAtEpochMillis`, `status`, `notes`)
+            SELECT s.`id`, COALESCE((SELECT `id` FROM `training_programs` LIMIT 1), 1), NULL, s.`workoutType`, s.`weekNumber`, s.`startedAtMillis`, s.`finishedAtMillis`, s.`status`, ''
+            FROM `workout_sessions` s
+            """.trimIndent()
+        )
+
+        // 5. Drop old tables and rename v2 tables
         db.execSQL("DROP TABLE IF EXISTS `protocols`")
         db.execSQL("DROP TABLE IF EXISTS `daily_checkins`")
         db.execSQL("DROP TABLE IF EXISTS `body_measurements`")

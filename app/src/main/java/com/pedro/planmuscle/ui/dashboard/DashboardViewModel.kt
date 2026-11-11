@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.pedro.planmuscle.data.local.entity.MealCheckEntity
 import com.pedro.planmuscle.data.local.entity.NutritionTargetEntity
 import com.pedro.planmuscle.data.local.entity.SupplementIntakeEntity
+import com.pedro.planmuscle.data.local.entity.TrainingProgramEntity
 import com.pedro.planmuscle.data.local.entity.WorkoutSessionEntity
 import com.pedro.planmuscle.domain.engine.HydrationEngine
 import com.pedro.planmuscle.domain.engine.WorkoutScheduler
@@ -42,11 +43,23 @@ class DashboardViewModel(private val repository: PlanMuscleRepository) : ViewMod
         repository.getActiveNutritionTarget(),
         repository.getTotalWaterForDate(todayEpochDay),
         repository.getMealChecksForDate(todayEpochDay),
-        repository.getSupplementIntakesForDate(todayEpochDay)
-    ) { program, target, totalWater, meals, supplements ->
+        repository.getSupplementIntakesForDate(todayEpochDay),
+        repository.getAllCompletedSessions()
+    ) { flows ->
+        val program = flows[0] as TrainingProgramEntity?
+        val target = flows[1] as NutritionTargetEntity?
+        val totalWater = flows[2] as Int?
+        @Suppress("UNCHECKED_CAST")
+        val meals = (flows[3] as? List<MealCheckEntity>) ?: emptyList()
+        @Suppress("UNCHECKED_CAST")
+        val supplements = (flows[4] as? List<SupplementIntakeEntity>) ?: emptyList()
+        @Suppress("UNCHECKED_CAST")
+        val completedSessions = (flows[5] as? List<WorkoutSessionEntity>) ?: emptyList()
+
         val startDay = program?.startDateEpochDay ?: todayEpochDay
         val week = WorkoutScheduler.getProtocolWeek(startDay, todayEpochDay)
-        val schedule = WorkoutScheduler.getScheduleStatus(startDay, todayEpochDay, null)
+        val lastType = completedSessions.firstOrNull()?.workoutType
+        val schedule = WorkoutScheduler.getScheduleStatus(startDay, todayEpochDay, lastType)
 
         val calendar = Calendar.getInstance()
         val hour = calendar.get(Calendar.HOUR_OF_DAY)
